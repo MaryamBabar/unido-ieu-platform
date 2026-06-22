@@ -1,0 +1,12 @@
+# Streamlit frontend requirements
+# Deployed separately on Streamlit Community Cloud
+
+streamlit==1.41.1
+httpx==0.28.1
+python-dotenv==1.0.1
+PyYAML==6.0.2
+
+# New — data, charts, Excel export
+pandas==2.2.3
+openpyxl==3.1.5
+plotly==5.24.1

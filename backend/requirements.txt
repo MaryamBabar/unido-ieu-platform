@@ -1,0 +1,27 @@
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-dotenv==1.0.1
+pydantic==2.10.3
+
+# ── PDF parsing ────────────────────────────────────────────────────────────────
+PyMuPDF==1.25.1
+
+# ── Local embeddings + reranker (no API key needed) ───────────────────────────
+# Downloads models on first run (~440MB embeddings, ~550MB reranker)
+sentence-transformers==3.3.1
+torch==2.5.1
+
+# ── Vector store ──────────────────────────────────────────────────────────────
+qdrant-client==1.12.1
+
+# ── Security ──────────────────────────────────────────────────────────────────
+bcrypt==4.2.0
+
+# ── Observability ─────────────────────────────────────────────────────────────
+langsmith==0.2.3
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+PyYAML==6.0.2
+httpx==0.28.1
+aiofiles==24.1.0

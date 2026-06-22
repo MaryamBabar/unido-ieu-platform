@@ -1,0 +1,45 @@
+# Environment — NEVER commit credentials
+.env
+*.env
+
+# User accounts — NEVER commit passwords (even hashed)
+data/users.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# PDF files — large, stored locally only
+data/pdfs/
+
+# Ingestion log
+data/ingestion_log.json
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Qdrant local (if running locally)
+qdrant_storage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
