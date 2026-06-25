@@ -10,6 +10,7 @@ UNIDO IEU Evaluation Intelligence Platform
 
 import io
 import os
+import re
 import json
 import httpx
 import pandas as pd
@@ -63,16 +64,15 @@ SDG_NAMES = {
 SDG_ICON_URL = "https://sdgs.un.org/sites/default/files/goals/E-WEB-Goal-{n:02d}.png"
 
 def sdg_badge_html(n: int, size: int = 36) -> str:
-    """Returns HTML for an SDG badge — official icon with colour fallback."""
+    """Returns HTML for an SDG badge — CSS-only, no external image dependency."""
     color = SDG_COLORS.get(n, "#888")
-    url = SDG_ICON_URL.format(n=n)
+    font_size = max(9, size // 3)
     return (
-        f'<img src="{url}" title="SDG {n}: {SDG_NAMES.get(n,"")}" '
-        f'width="{size}" height="{size}" style="border-radius:4px;margin:2px;vertical-align:middle;" '
-        f'onerror="this.outerHTML=\'<span title=&quot;SDG {n}: {SDG_NAMES.get(n,"")}&quot; '
-        f'style=&quot;display:inline-flex;align-items:center;justify-content:center;'
-        f'width:{size}px;height:{size}px;background:{color};color:white;font-weight:700;'
-        f'border-radius:4px;font-size:{max(9,size//3)}px;margin:2px;&quot;>{n}</span>\'">'
+        f'<span title="SDG {n}: {SDG_NAMES.get(n,"")}" '
+        f'style="display:inline-flex;align-items:center;justify-content:center;'
+        f'width:{size}px;height:{size}px;background:{color};color:white;font-weight:800;'
+        f'border-radius:4px;font-size:{font_size}px;margin:2px;vertical-align:middle;'
+        f'font-family:Arial,sans-serif;letter-spacing:-0.5px;">{n}</span>'
     )
 
 def sdg_badges_row(sdg_list: list, size: int = 32) -> str:
@@ -281,29 +281,107 @@ def do_logout():
 # Excel export helper
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Text cleaning — strip PDF extraction artefacts and split into items
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TOC_LINE  = re.compile(r'^.{3,60}[.\s]{3,}\d{1,3}\s*$')   # "Introduction ........ 14"
+_PAGE_NUM  = re.compile(r'^\s*\d{1,3}\s*$')                 # lone page numbers
+_SHORT_ART = re.compile(r'^.{1,12}$')                        # very short artifact lines
+
+def _clean_raw_text(text: str) -> str:
+    """Remove table-of-contents lines, page numbers, and other PDF artefacts."""
+    if not text:
+        return ""
+    lines = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            lines.append("")
+            continue
+        if _TOC_LINE.match(stripped):   # skip TOC entries
+            continue
+        if _PAGE_NUM.match(stripped):   # skip bare page numbers
+            continue
+        lines.append(line)
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def extract_items(chunk_text: str, max_items: int = 10) -> list[str]:
+    """
+    Parse a raw chunk into individual lesson / recommendation items.
+    Handles: numbered lists (1. / 1) / (1)), bullet points, plain paragraphs.
+    Returns a list of clean single-item strings.
+    """
+    text = _clean_raw_text(chunk_text)
+    if not text:
+        return []
+
+    # ── Try numbered list ────────────────────────────────────────────────────
+    # Matches "1.", "1)", "(1)" at start of line (possibly after whitespace)
+    num_split = re.split(r'(?m)(?:^|\n)\s*(?:\(\d+\)|\d+[.):])\s*', text)
+    if len(num_split) > 2:
+        items = []
+        for part in num_split[1:]:         # skip preamble
+            core = part.strip()
+            if len(core) < 25:
+                continue
+            # Take the first full sentence (up to 3 sentences max, cap 350 chars)
+            sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z“‘"])', core)
+            item = " ".join(sentences[:3]).strip()
+            items.append(item[:350])
+            if len(items) >= max_items:
+                break
+        if items:
+            return items
+
+    # ── Try bullet / dash list ───────────────────────────────────────────────
+    bullet_split = re.split(r'(?m)(?:^|\n)\s*[•·\-–]\s+', text)
+    if len(bullet_split) > 2:
+        items = [p.strip()[:350] for p in bullet_split[1:] if len(p.strip()) >= 25]
+        if items:
+            return items[:max_items]
+
+    # ── Fallback: paragraph-level (return first 2 meaningful sentences) ──────
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z“"])', text)
+    result = " ".join(sentences[:3]).strip()
+    if len(result) >= 30:
+        return [result[:400]]
+    return []
+
+
 def make_excel(reports_data: list[dict]) -> bytes:
+    """
+    Build an Excel workbook with one row per extracted lesson or recommendation.
+    Text is cleaned and split into individual items before writing.
+    """
     rows_l, rows_r = [], []
     for rep in reports_data:
         meta = {
-            "Report Title":    rep.get("title", ""),
-            "Year":            rep.get("year", ""),
-            "Country":         rep.get("country", ""),
-            "Region":          rep.get("region", ""),
-            "Thematic Area":   rep.get("thematic_category", ""),
+            "Report Title": rep.get("title", ""),
+            "Year":         rep.get("year", ""),
+            "Country":      rep.get("country", ""),
+            "Region":       rep.get("region", ""),
+            "Thematic Area":rep.get("thematic_category", ""),
         }
-        for lesson in rep.get("lessons_learned", []):
-            rows_l.append({**meta, "Lesson Learned": lesson})
-        for rec in rep.get("recommendations", []):
-            rows_r.append({**meta, "Recommendation": rec})
+        for chunk in rep.get("lessons_learned", []):
+            for item in extract_items(chunk):
+                rows_l.append({**meta, "Lesson Learned": item})
+
+        for chunk in rep.get("recommendations", []):
+            for item in extract_items(chunk):
+                rows_r.append({**meta, "Recommendation": item})
 
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df_l = pd.DataFrame(rows_l) if rows_l else pd.DataFrame(
-            columns=["Report Title","Year","Country","Region","Thematic Area","Lesson Learned"])
+            columns=["Report Title", "Year", "Country", "Region", "Thematic Area", "Lesson Learned"])
         df_r = pd.DataFrame(rows_r) if rows_r else pd.DataFrame(
-            columns=["Report Title","Year","Country","Region","Thematic Area","Recommendation"])
-        df_l.to_excel(writer, sheet_name="Lessons Learned",    index=False)
-        df_r.to_excel(writer, sheet_name="Recommendations",    index=False)
+            columns=["Report Title", "Year", "Country", "Region", "Thematic Area", "Recommendation"])
+        df_l.to_excel(writer, sheet_name="Lessons Learned",  index=False)
+        df_r.to_excel(writer, sheet_name="Recommendations",  index=False)
     return buf.getvalue()
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -456,22 +534,45 @@ def show_search_tab(filters: dict):
             if data:
                 rep_data = data[0]
                 col_l, col_r = st.columns(2)
+
                 with col_l:
                     st.markdown("**Lessons Learned**")
-                    lessons = rep_data.get("lessons_learned", [])
-                    if lessons:
-                        for i, lesson in enumerate(lessons, 1):
-                            st.markdown(f"**{i}.** {lesson}")
+                    raw_lessons = rep_data.get("lessons_learned", [])
+                    # Parse each chunk into individual items
+                    parsed_lessons = []
+                    for chunk in raw_lessons:
+                        parsed_lessons.extend(extract_items(chunk))
+                    if parsed_lessons:
+                        for i, item in enumerate(parsed_lessons, 1):
+                            st.markdown(
+                                f'<div style="background:#f0f9ff;border-left:3px solid #009EDB;'
+                                f'padding:0.55rem 0.8rem;margin-bottom:0.45rem;border-radius:0 6px 6px 0;'
+                                f'font-size:0.87rem;color:#1a1a2e;line-height:1.55;">'
+                                f'<span style="font-weight:700;color:#009EDB;margin-right:6px;">{i}.</span>'
+                                f'{item}</div>',
+                                unsafe_allow_html=True,
+                            )
                     else:
-                        st.caption("No lessons extracted from this section.")
+                        st.caption("No lessons extracted from this report.")
+
                 with col_r:
                     st.markdown("**Recommendations**")
-                    recs = rep_data.get("recommendations", [])
-                    if recs:
-                        for i, rec in enumerate(recs, 1):
-                            st.markdown(f"**{i}.** {rec}")
+                    raw_recs = rep_data.get("recommendations", [])
+                    parsed_recs = []
+                    for chunk in raw_recs:
+                        parsed_recs.extend(extract_items(chunk))
+                    if parsed_recs:
+                        for i, item in enumerate(parsed_recs, 1):
+                            st.markdown(
+                                f'<div style="background:#f0fdf4;border-left:3px solid #22c55e;'
+                                f'padding:0.55rem 0.8rem;margin-bottom:0.45rem;border-radius:0 6px 6px 0;'
+                                f'font-size:0.87rem;color:#1a1a2e;line-height:1.55;">'
+                                f'<span style="font-weight:700;color:#16a34a;margin-right:6px;">{i}.</span>'
+                                f'{item}</div>',
+                                unsafe_allow_html=True,
+                            )
                     else:
-                        st.caption("No recommendations extracted from this section.")
+                        st.caption("No recommendations extracted from this report.")
             else:
                 st.caption("No structured data found for this report yet.")
 
@@ -626,34 +727,180 @@ def show_synthesis_tab(filters: dict):
 # TAB 3 — Visualize
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_knowledge_graph_figure(reports: list, by_sdg: dict, by_thematic: dict, by_year: dict):
+    """Build a Plotly knowledge graph: reports as nodes, grouped by thematic area,
+    edges drawn for shared SDGs (≥2). Returns a go.Figure."""
+    import math
+
+    if not reports:
+        return None
+
+    # ── Assign theme colors ───────────────────────────────────────────────────
+    theme_palette = [
+        "#009EDB", "#4CAF50", "#FF9800", "#E91E63", "#9C27B0",
+        "#00BCD4", "#FF5722", "#607D8B", "#795548", "#3F51B5", "#8BC34A",
+    ]
+    theme_list = sorted(set(r.get("thematic_category", "Unknown") for r in reports))
+    theme_color = {t: theme_palette[i % len(theme_palette)] for i, t in enumerate(theme_list)}
+
+    # ── Cluster reports by thematic area ─────────────────────────────────────
+    clusters: dict = {}
+    for r in reports:
+        t = r.get("thematic_category", "Unknown")
+        clusters.setdefault(t, []).append(r)
+
+    n_clusters = len(clusters)
+    cluster_radius = 4.5
+    report_pos: dict = {}   # report_id → (x, y)
+    theme_pos: dict  = {}   # theme_name → (x, y)
+
+    for ci, (theme, reps) in enumerate(sorted(clusters.items())):
+        ca = 2 * math.pi * ci / n_clusters
+        cx = cluster_radius * math.cos(ca)
+        cy = cluster_radius * math.sin(ca)
+        theme_pos[theme] = (cx * 1.35, cy * 1.35)
+
+        n = len(reps)
+        for ri, rep in enumerate(reps):
+            if n == 1:
+                rx, ry = cx, cy
+            else:
+                ra = 2 * math.pi * ri / n
+                spread = min(1.0 + n * 0.06, 1.8)
+                rx = cx + spread * math.cos(ra)
+                ry = cy + spread * math.sin(ra)
+            report_pos[rep["report_id"]] = (rx, ry)
+
+    # ── Theme → report edges ──────────────────────────────────────────────────
+    theme_edge_x, theme_edge_y = [], []
+    for theme, reps in clusters.items():
+        tx, ty = theme_pos[theme]
+        for rep in reps:
+            rx, ry = report_pos[rep["report_id"]]
+            theme_edge_x += [rx, tx, None]
+            theme_edge_y += [ry, ty, None]
+
+    # ── SDG-connection edges (reports sharing ≥2 SDGs) ───────────────────────
+    sdg_edge_x, sdg_edge_y = [], []
+    id_list = [r["report_id"] for r in reports]
+    sdg_map = {r["report_id"]: set(r.get("sdgs") or []) for r in reports}
+    for i in range(len(id_list)):
+        for j in range(i + 1, len(id_list)):
+            shared = sdg_map[id_list[i]] & sdg_map[id_list[j]]
+            if len(shared) >= 2:
+                x1, y1 = report_pos[id_list[i]]
+                x2, y2 = report_pos[id_list[j]]
+                sdg_edge_x += [x1, x2, None]
+                sdg_edge_y += [y1, y2, None]
+
+    # ── Build traces ──────────────────────────────────────────────────────────
+    fig = go.Figure()
+
+    # Theme-report edges (light grey)
+    fig.add_trace(go.Scatter(
+        x=theme_edge_x, y=theme_edge_y, mode="lines",
+        line=dict(color="rgba(200,200,200,0.4)", width=1),
+        hoverinfo="none", showlegend=False,
+    ))
+
+    # SDG connection edges (blue, thinner)
+    if sdg_edge_x:
+        fig.add_trace(go.Scatter(
+            x=sdg_edge_x, y=sdg_edge_y, mode="lines",
+            line=dict(color="rgba(0,158,219,0.25)", width=1.5),
+            hoverinfo="none", showlegend=False, name="Shared SDGs",
+        ))
+
+    # Theme nodes (larger squares)
+    for theme in sorted(clusters.keys()):
+        tx, ty = theme_pos[theme]
+        n_reps = len(clusters[theme])
+        fig.add_trace(go.Scatter(
+            x=[tx], y=[ty], mode="markers+text",
+            marker=dict(
+                size=22, color=theme_color[theme],
+                symbol="square", line=dict(color="white", width=2),
+            ),
+            text=[theme.replace(" / ", "<br>").replace(" & ", "<br>")],
+            textposition="top center",
+            textfont=dict(size=9, color="#1a1a2e"),
+            hovertext=f"<b>{theme}</b><br>{n_reps} reports",
+            hoverinfo="text",
+            showlegend=True,
+            name=theme,
+            legendgroup=theme,
+        ))
+
+    # Report nodes (colored by theme)
+    rep_x = [report_pos[r["report_id"]][0] for r in reports]
+    rep_y = [report_pos[r["report_id"]][1] for r in reports]
+    rep_colors = [theme_color.get(r.get("thematic_category", "Unknown"), "#888") for r in reports]
+    rep_hover = []
+    for r in reports:
+        sdgs_str = " · ".join([f"SDG {s}" for s in sorted(r.get("sdgs") or [])[:4]])
+        rep_hover.append(
+            f"<b>{r.get('title','')[:55]}…</b><br>"
+            f"{r.get('year','')} · {r.get('country','')}<br>"
+            f"{r.get('thematic_category','')}<br>"
+            f"{sdgs_str}"
+        )
+
+    fig.add_trace(go.Scatter(
+        x=rep_x, y=rep_y, mode="markers",
+        marker=dict(
+            size=10, color=rep_colors,
+            line=dict(color="white", width=1.5),
+            opacity=0.9,
+        ),
+        hovertext=rep_hover, hoverinfo="text",
+        showlegend=False, name="Reports",
+    ))
+
+    fig.update_layout(
+        height=620,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(249,251,252,1)",
+        margin=dict(t=20, b=20, l=20, r=20),
+        showlegend=True,
+        legend=dict(
+            orientation="v", x=1.01, y=1, bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="#e5e7eb", borderwidth=1,
+            font=dict(size=10),
+        ),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        hovermode="closest",
+    )
+    return fig
+
+
 def show_visualize_tab():
+    # ── Load data ─────────────────────────────────────────────────────────────
+    load_reports()
+    reports = st.session_state.all_reports or []
+
     try:
         r = api("GET", "/api/v1/stats")
-        if r.status_code != 200:
-            st.error("Could not load portfolio stats.")
-            return
-        stats = r.json()
-    except Exception as e:
-        st.error(f"Backend error: {e}")
-        return
+        stats = r.json() if r.status_code == 200 else {}
+    except Exception:
+        stats = {}
 
-    total_docs  = stats.get("total_documents", 0)
-    total_chunks= stats.get("total_chunks", 0)
-    by_year     = stats.get("documents_by_year", {})
-    by_thematic = stats.get("documents_by_thematic", {})
-    by_sdg      = stats.get("documents_by_sdg", {})
-    by_dac      = stats.get("documents_by_dac", {})
+    total_docs   = stats.get("total_documents", 0)
+    total_chunks = stats.get("total_chunks", 0)
+    by_year      = stats.get("documents_by_year", {})
+    by_thematic  = stats.get("documents_by_thematic", {})
+    by_sdg       = stats.get("documents_by_sdg", {})
+    by_dac       = stats.get("documents_by_dac", {})
 
     # ── Stat cards ────────────────────────────────────────────────────────────
-    sdg_count     = len([v for v in by_sdg.values() if v > 0])
-    thematic_count= len(by_thematic)
-
+    sdg_count = len([v for v in by_sdg.values() if v > 0])
+    countries  = len(set(r.get("country", "") for r in reports if r.get("country")))
     c1, c2, c3, c4 = st.columns(4)
     for col, num, lbl in [
-        (c1, total_docs,   "Total Reports"),
-        (c2, total_chunks, "Total Chunks Indexed"),
-        (c3, sdg_count,    "SDGs Covered"),
-        (c4, thematic_count,"Thematic Areas"),
+        (c1, total_docs,    "Total Reports"),
+        (c2, total_chunks,  "Chunks Indexed"),
+        (c3, sdg_count,     "SDGs Covered"),
+        (c4, countries,     "Countries"),
     ]:
         col.markdown(
             f'<div class="stat-card"><div class="stat-num">{num}</div>'
@@ -661,107 +908,117 @@ def show_visualize_tab():
             unsafe_allow_html=True,
         )
 
-    if total_docs == 0:
-        st.info("No reports indexed yet — ingest PDFs to see charts.")
+    if not reports:
+        st.info("No reports indexed yet.")
         return
 
     st.divider()
 
-    # ── SDG icon grid ─────────────────────────────────────────────────────────
+    # ── SDG coverage row ──────────────────────────────────────────────────────
     st.markdown("#### SDG Coverage")
     sdg_badge_grid = ""
     for n in range(1, 18):
         count = by_sdg.get(f"SDG {n}", 0)
-        opacity = "1.0" if count > 0 else "0.25"
+        opacity = "1.0" if count > 0 else "0.2"
         sdg_badge_grid += (
             f'<span style="display:inline-flex;flex-direction:column;align-items:center;'
-            f'margin:4px;opacity:{opacity};" title="SDG {n}: {SDG_NAMES[n]} — {count} reports">'
-            f'{sdg_badge_html(n, 48)}'
-            f'<span style="font-size:10px;color:#6b7280;margin-top:2px;">{count}</span>'
+            f'margin:3px;opacity:{opacity};" title="SDG {n}: {SDG_NAMES[n]} — {count} reports">'
+            f'{sdg_badge_html(n, 46)}'
+            f'<span style="font-size:9px;color:#6b7280;margin-top:2px;">{count}</span>'
             f'</span>'
         )
     st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:2px;">{sdg_badge_grid}</div>',
+        f'<div style="display:flex;flex-wrap:wrap;gap:1px;">{sdg_badge_grid}</div>',
         unsafe_allow_html=True,
     )
 
     st.divider()
 
-    # ── Charts row 1 ──────────────────────────────────────────────────────────
-    col_a, col_b = st.columns(2)
+    # ── Knowledge Graph ───────────────────────────────────────────────────────
+    st.markdown("#### Knowledge Graph — Portfolio Structure")
+    st.caption(
+        "**Squares** = thematic areas (colored). **Circles** = individual reports. "
+        "**Blue edges** = reports sharing ≥2 SDGs. Hover any node for details."
+    )
 
-    with col_a:
-        st.markdown("#### Thematic Area Distribution")
-        if by_thematic:
-            fig = px.pie(
-                names=list(by_thematic.keys()),
-                values=list(by_thematic.values()),
-                color_discrete_sequence=px.colors.qualitative.Safe,
-                hole=0.35,
-            )
-            fig.update_traces(textposition="inside", textinfo="percent+label")
-            fig.update_layout(
-                showlegend=False, margin=dict(t=10, b=10, l=10, r=10),
-                height=320, paper_bgcolor="rgba(0,0,0,0)",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+    kg_fig = _build_knowledge_graph_figure(reports, by_sdg, by_thematic, by_year)
+    if kg_fig:
+        st.plotly_chart(kg_fig, use_container_width=True)
 
-    with col_b:
-        st.markdown("#### Reports by Year")
-        if by_year:
-            years = sorted(by_year.keys())
-            fig = go.Figure(go.Bar(
-                x=years, y=[by_year[y] for y in years],
-                marker_color="#009EDB",
-                text=[by_year[y] for y in years],
-                textposition="outside",
-            ))
-            fig.update_layout(
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=320, paper_bgcolor="rgba(0,0,0,0)",
-                xaxis_title="Year", yaxis_title="Reports",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+    st.divider()
 
-    # ── Charts row 2 ──────────────────────────────────────────────────────────
-    col_c, col_d = st.columns(2)
+    # ── Supporting charts ─────────────────────────────────────────────────────
+    with st.expander("📊 Portfolio Charts", expanded=False):
+        col_a, col_b = st.columns(2)
 
-    with col_c:
-        st.markdown("#### SDG Coverage (Top 10)")
-        if by_sdg:
-            top_sdg = sorted(by_sdg.items(), key=lambda x: -x[1])[:10]
-            sdg_labels = [x[0] for x in top_sdg]
-            sdg_vals   = [x[1] for x in top_sdg]
-            sdg_colors = [SDG_COLORS.get(int(l.split()[-1]), "#009EDB") for l in sdg_labels]
-            fig = go.Figure(go.Bar(
-                y=sdg_labels, x=sdg_vals,
-                orientation="h",
-                marker_color=sdg_colors,
-                text=sdg_vals, textposition="outside",
-            ))
-            fig.update_layout(
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=340, paper_bgcolor="rgba(0,0,0,0)",
-                xaxis_title="Reports",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        with col_a:
+            st.markdown("##### Thematic Distribution")
+            if by_thematic:
+                fig = px.pie(
+                    names=list(by_thematic.keys()),
+                    values=list(by_thematic.values()),
+                    color_discrete_sequence=px.colors.qualitative.Safe,
+                    hole=0.35,
+                )
+                fig.update_traces(textposition="inside", textinfo="percent+label")
+                fig.update_layout(
+                    showlegend=False, margin=dict(t=10,b=10,l=10,r=10),
+                    height=300, paper_bgcolor="rgba(0,0,0,0)",
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-    with col_d:
-        st.markdown("#### DAC Criteria Coverage")
-        if by_dac:
-            dac_keys = [k.replace("_"," ").title() for k in by_dac.keys()]
-            dac_vals = list(by_dac.values())
-            fig = go.Figure(go.Bar(
-                x=dac_keys, y=dac_vals,
-                marker_color=DAC_COLORS[:len(dac_keys)],
-                text=dac_vals, textposition="outside",
-            ))
-            fig.update_layout(
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=340, paper_bgcolor="rgba(0,0,0,0)",
-                yaxis_title="Reports with evidence",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            st.markdown("##### Reports by Year")
+            if by_year:
+                years = sorted(by_year.keys())
+                fig = go.Figure(go.Bar(
+                    x=years, y=[by_year[y] for y in years],
+                    marker_color="#009EDB",
+                    text=[by_year[y] for y in years], textposition="outside",
+                ))
+                fig.update_layout(
+                    margin=dict(t=10,b=10,l=10,r=10), height=300,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    xaxis_title="Year", yaxis_title="Reports",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        col_c, col_d = st.columns(2)
+
+        with col_c:
+            st.markdown("##### SDG Coverage (Top 10)")
+            if by_sdg:
+                top_sdg = sorted(by_sdg.items(), key=lambda x: -x[1])[:10]
+                sdg_labels = [x[0] for x in top_sdg]
+                sdg_vals   = [x[1] for x in top_sdg]
+                sdg_colors_bar = [SDG_COLORS.get(int(l.split()[-1]), "#009EDB") for l in sdg_labels]
+                fig = go.Figure(go.Bar(
+                    y=sdg_labels, x=sdg_vals, orientation="h",
+                    marker_color=sdg_colors_bar,
+                    text=sdg_vals, textposition="outside",
+                ))
+                fig.update_layout(
+                    margin=dict(t=10,b=10,l=10,r=10), height=320,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        with col_d:
+            st.markdown("##### DAC Criteria Coverage")
+            if by_dac:
+                dac_keys = [k.replace("_"," ").title() for k in by_dac.keys()]
+                dac_vals = list(by_dac.values())
+                fig = go.Figure(go.Bar(
+                    x=dac_keys, y=dac_vals,
+                    marker_color=DAC_COLORS[:len(dac_keys)],
+                    text=dac_vals, textposition="outside",
+                ))
+                fig.update_layout(
+                    margin=dict(t=10,b=10,l=10,r=10), height=320,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis_title="Reports with evidence",
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 4 — OECD-DAC Analysis
@@ -1061,7 +1318,7 @@ def show_main_app():
         with st.expander("Evaluation Type", expanded=False):
             eval_type_sel = st.multiselect(
                 "Type",
-                ["Project Evaluation", "Thematic Evaluation", "Country Evaluation",
+                ["Project Evaluation", "Strategic Evaluation", "Country Evaluation",
                  "Synthesis", "Reference Document"],
                 label_visibility="collapsed", key="f_eval_type",
             )

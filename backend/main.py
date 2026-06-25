@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from config import config
 from models import QueryRequest, HealthResponse, StatsResponse
-from rag_pipeline import run_query, check_qdrant_health, get_qdrant
+from rag_pipeline import run_query, check_qdrant_health, get_qdrant, create_text_index
 from auth import authenticate, validate_session, logout, create_user, set_user_active, change_password, delete_user, list_users, get_active_sessions
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -26,6 +26,13 @@ else:
     logger.info("✅ Credentials loaded. Starting backend...")
 
 app = FastAPI(title="UNIDO IEU Evaluation Intelligence Platform", version="1.0.0")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Create Qdrant text index for hybrid search on first startup."""
+    if not config.validate():  # only if credentials are present
+        create_text_index()
 
 app.add_middleware(
     CORSMiddleware,
