@@ -310,72 +310,69 @@ def _clean_raw_text(text: str) -> str:
 
 
 def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
-    “””
-    Parse a raw chunk into individual lesson / recommendation items.
-    Only splits on numbered list items that START a new line.
-    Caps each item at 2 sentences / 280 characters.
-    “””
+    # Parse chunk into individual numbered items using pure string ops (no regex).
     text = _clean_raw_text(chunk_text)
     if not text:
         return []
 
-    def _cap(s: str) -> str:
-        “””Keep first 2 sentences, hard-cap at 280 chars.”””
+    def cap_text(s):
+        # Keep first 2 sentences, max 280 chars.
         s = s.strip()
-        # Split on sentence boundary followed by capital letter
-        parts = re.split(r’(?<=[.!?])\s+(?=[A-Z“‘”])’, s)
-        return “ “.join(parts[:2]).strip()[:280]
+        count = 0
+        for i in range(len(s) - 2):
+            if s[i] in ".!?" and s[i + 1] == " " and s[i + 2].isupper():
+                count += 1
+                if count >= 2:
+                    s = s[: i + 1]
+                    break
+        return s[:280]
 
-    # ── Numbered list: ONLY at start of line (^\s*1. or ^\s*1) ) ────────────
-    # Require at least 2 digits-or-single-digit followed by . or ) then space
-    # Negative lookahead prevents matching “Fig. 1.” or “Table 2.” patterns
-    num_pat = re.compile(
-        r’(?m)^\s*(\d{1,2})[.)]\s+(?=[A-Z“‘”a-z])’,
-    )
-    matches = list(num_pat.finditer(text))
+    items = []
+    current = []
+    in_item = False
 
-    if len(matches) >= 2:
-        items = []
-        for idx, m in enumerate(matches):
-            start = m.end()
-            end   = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-            raw   = text[start:end].strip()
-            # Remove trailing fragment that looks like a new preamble
-            raw = re.sub(r’\n[A-Z][a-z].{0,40}:\s*$’, ‘’, raw).strip()
-            item  = _cap(raw)
-            if len(item) >= 25:
-                items.append(item)
-            if len(items) >= max_items:
-                break
-        if items:
-            return items
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Detect numbered item: starts with 1-2 digits then . or ) then space
+        j = 0
+        while j < 2 and j < len(stripped) and stripped[j].isdigit():
+            j += 1
+        is_new = (
+            j > 0
+            and j < len(stripped)
+            and stripped[j] in ".)"
+            and j + 1 < len(stripped)
+            and stripped[j + 1] == " "
+        )
+        if is_new:
+            if current:
+                txt = cap_text(" ".join(current))
+                if len(txt) >= 25:
+                    items.append(txt)
+                if len(items) >= max_items:
+                    break
+            current = [stripped[j + 2 :]]
+            in_item = True
+        elif in_item:
+            current.append(stripped)
 
-    # ── Bullet list ──────────────────────────────────────────────────────────
-    bullet_pat = re.compile(r’(?m)^\s*[•·\-–]\s+’)
-    b_matches = list(bullet_pat.finditer(text))
-    if len(b_matches) >= 2:
-        items = []
-        for idx, m in enumerate(b_matches):
-            start = m.end()
-            end   = b_matches[idx + 1].start() if idx + 1 < len(b_matches) else len(text)
-            item  = _cap(text[start:end])
-            if len(item) >= 25:
-                items.append(item)
-            if len(items) >= max_items:
-                break
-        if items:
-            return items
+    if current and len(items) < max_items:
+        txt = cap_text(" ".join(current))
+        if len(txt) >= 25:
+            items.append(txt)
 
-    # ── Fallback: whole chunk → first 2 sentences ────────────────────────────
-    item = _cap(text)
-    return [item] if len(item) >= 30 else []
+    if len(items) >= 2:
+        return items
+
+    # Fallback: return first 2 sentences of whole chunk
+    result = cap_text(text)
+    return [result] if len(result) >= 30 else []
 
 
 def make_excel(reports_data: list[dict]) -> bytes:
-    """
-    Build an Excel workbook with one row per extracted lesson or recommendation.
-    Text is cleaned and split into individual items before writing.
-    """
+    # Build Excel: one row per extracted lesson or recommendation item.
     rows_l, rows_r = [], []
     for rep in reports_data:
         meta = {
