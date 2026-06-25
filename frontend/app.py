@@ -1466,7 +1466,6 @@ if not st.session_state.session_token:
     show_login_page()
 else:
     show_main_app()
-                            unsafe_allow_html=True)
                 if h.get("document_count", 0):
                     st.caption(f"{h['document_count']:,} chunks indexed")
 
