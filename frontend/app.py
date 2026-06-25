@@ -309,47 +309,66 @@ def _clean_raw_text(text: str) -> str:
     return cleaned.strip()
 
 
-def extract_items(chunk_text: str, max_items: int = 10) -> list[str]:
-    """
+def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
+    “””
     Parse a raw chunk into individual lesson / recommendation items.
-    Handles: numbered lists (1. / 1) / (1)), bullet points, plain paragraphs.
-    Returns a list of clean single-item strings.
-    """
+    Only splits on numbered list items that START a new line.
+    Caps each item at 2 sentences / 280 characters.
+    “””
     text = _clean_raw_text(chunk_text)
     if not text:
         return []
 
-    # ── Try numbered list ────────────────────────────────────────────────────
-    # Matches "1.", "1)", "(1)" at start of line (possibly after whitespace)
-    num_split = re.split(r'(?m)(?:^|\n)\s*(?:\(\d+\)|\d+[.):])\s*', text)
-    if len(num_split) > 2:
+    def _cap(s: str) -> str:
+        “””Keep first 2 sentences, hard-cap at 280 chars.”””
+        s = s.strip()
+        # Split on sentence boundary followed by capital letter
+        parts = re.split(r’(?<=[.!?])\s+(?=[A-Z“‘”])’, s)
+        return “ “.join(parts[:2]).strip()[:280]
+
+    # ── Numbered list: ONLY at start of line (^\s*1. or ^\s*1) ) ────────────
+    # Require at least 2 digits-or-single-digit followed by . or ) then space
+    # Negative lookahead prevents matching “Fig. 1.” or “Table 2.” patterns
+    num_pat = re.compile(
+        r’(?m)^\s*(\d{1,2})[.)]\s+(?=[A-Z“‘”a-z])’,
+    )
+    matches = list(num_pat.finditer(text))
+
+    if len(matches) >= 2:
         items = []
-        for part in num_split[1:]:         # skip preamble
-            core = part.strip()
-            if len(core) < 25:
-                continue
-            # Take the first full sentence (up to 3 sentences max, cap 350 chars)
-            sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z“‘"])', core)
-            item = " ".join(sentences[:3]).strip()
-            items.append(item[:350])
+        for idx, m in enumerate(matches):
+            start = m.end()
+            end   = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+            raw   = text[start:end].strip()
+            # Remove trailing fragment that looks like a new preamble
+            raw = re.sub(r’\n[A-Z][a-z].{0,40}:\s*$’, ‘’, raw).strip()
+            item  = _cap(raw)
+            if len(item) >= 25:
+                items.append(item)
             if len(items) >= max_items:
                 break
         if items:
             return items
 
-    # ── Try bullet / dash list ───────────────────────────────────────────────
-    bullet_split = re.split(r'(?m)(?:^|\n)\s*[•·\-–]\s+', text)
-    if len(bullet_split) > 2:
-        items = [p.strip()[:350] for p in bullet_split[1:] if len(p.strip()) >= 25]
+    # ── Bullet list ──────────────────────────────────────────────────────────
+    bullet_pat = re.compile(r’(?m)^\s*[•·\-–]\s+’)
+    b_matches = list(bullet_pat.finditer(text))
+    if len(b_matches) >= 2:
+        items = []
+        for idx, m in enumerate(b_matches):
+            start = m.end()
+            end   = b_matches[idx + 1].start() if idx + 1 < len(b_matches) else len(text)
+            item  = _cap(text[start:end])
+            if len(item) >= 25:
+                items.append(item)
+            if len(items) >= max_items:
+                break
         if items:
-            return items[:max_items]
+            return items
 
-    # ── Fallback: paragraph-level (return first 2 meaningful sentences) ──────
-    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z“"])', text)
-    result = " ".join(sentences[:3]).strip()
-    if len(result) >= 30:
-        return [result[:400]]
-    return []
+    # ── Fallback: whole chunk → first 2 sentences ────────────────────────────
+    item = _cap(text)
+    return [item] if len(item) >= 30 else []
 
 
 def make_excel(reports_data: list[dict]) -> bytes:
@@ -1285,32 +1304,37 @@ def show_main_app():
                                           label_visibility="collapsed", key="f_thematic")
         with st.expander("SDGs", expanded=False):
             sdg_sel_nums = []
-            # 3-column icon grid — click icon to toggle
+            # 3-column CSS badge grid — no external images, always renders
             for row_start in range(1, 18, 3):
                 row_sdgs = list(range(row_start, min(row_start + 3, 18)))
                 cols = st.columns(3)
                 for i, n in enumerate(row_sdgs):
                     with cols[i]:
                         color = SDG_COLORS[n]
-                        url   = SDG_ICON_URL.format(n=n)
-                        # Show the official UN SDG icon
+                        name_short = SDG_NAMES[n].split()[0]  # first word only
                         st.markdown(
-                            f'<a title="SDG {n}: {SDG_NAMES[n]}">'
-                            f'<img src="{url}" width="52" style="border-radius:5px;display:block;margin:auto;" '
-                            f'onerror="this.outerHTML=\'<div style=&quot;width:52px;height:52px;background:{color};'
-                            f'color:white;font-weight:700;border-radius:5px;display:flex;align-items:center;'
-                            f'justify-content:center;font-size:14px;margin:auto;&quot;>{n}</div>\'">'
-                            f'</a>',
+                            f'<div style="text-align:center;margin-bottom:2px;">'
+                            f'<div style="display:inline-flex;flex-direction:column;'
+                            f'align-items:center;justify-content:center;'
+                            f'width:52px;height:52px;background:{color};color:white;'
+                            f'font-weight:800;border-radius:6px;font-size:16px;'
+                            f'font-family:Arial,sans-serif;cursor:default;" '
+                            f'title="SDG {n}: {SDG_NAMES[n]}">'
+                            f'<span style="font-size:18px;line-height:1;">{n}</span>'
+                            f'<span style="font-size:7px;font-weight:600;opacity:0.9;'
+                            f'margin-top:1px;letter-spacing:0.3px;">{name_short[:6].upper()}</span>'
+                            f'</div></div>',
                             unsafe_allow_html=True,
                         )
                         checked = st.checkbox(
-                            f"{n}", key=f"sdg_cb_{n}",
-                            label_visibility="visible",
+                            SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
+                            label_visibility="collapsed",
                         )
                         if checked:
                             sdg_sel_nums.append(n)
             if sdg_sel_nums:
-                st.caption(f"Selected: {', '.join(f'SDG {n}' for n in sdg_sel_nums)}")
+                badges = "".join(sdg_badge_html(n, 22) for n in sdg_sel_nums)
+                st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
             if st.button("Clear SDGs", key="clear_sdgs", use_container_width=True):
                 for n in range(1, 18):
                     st.session_state[f"sdg_cb_{n}"] = False
