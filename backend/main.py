@@ -282,6 +282,54 @@ async def list_reports(session: dict = Depends(require_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+_LESSONS_KEYWORDS = (
+    "lesson", "experience show", "experience suggest", "demonstrated",
+    "evidence show", "evidence suggest", "evaluation found", "evaluation show",
+    "key finding", "important finding", "it was found", "it is recommended",
+    "the evaluation", "proved to be", "contribut", "important to note",
+    "it is important", "critical factor", "success factor", "key factor",
+)
+_RECS_KEYWORDS = (
+    "recommend", "should ", "must ", "advised", "proposed", "suggest",
+    "action needed", "need to ", "needs to ", "ought to", "it is essential",
+    "it is important to", "should be", "must be", "will need",
+)
+_CHUNK_GARBAGE = (
+    "questionnaire", "interview guide", "terms of reference",
+    "key informant", "criteria question", "figures and tables",
+    "project factsheet", "actual project start date", "pad issuance",
+    "soalan temubual", "membangunkan dapatan", "highly unsatisfactory",
+    "highly satisfactory", "wagramer", "vienna international",
+    "list of figures", "list of tables", "table of contents",
+    "acknowledgement", "abbreviation", "acronym",
+)
+
+
+def _is_genuine_section_chunk(text: str, section: str) -> bool:
+    """Return True if this chunk is genuine lessons/recommendations content."""
+    if not text or len(text) < 80:
+        return False
+    lower = text.lower()
+    # Reject known garbage content
+    for pat in _CHUNK_GARBAGE:
+        if pat in lower:
+            return False
+    # Reject table column header rows (e.g. "Person responsible" tables)
+    first_line = text.split("\n")[0].strip().lower()
+    if first_line.startswith("person ") or first_line in ("person", "actor", "responsible party"):
+        return False
+    # Require section-appropriate keywords — chunk must actually discuss the topic
+    keywords = _LESSONS_KEYWORDS if section == "lessons_learned" else _RECS_KEYWORDS
+    if not any(kw in lower for kw in keywords):
+        return False
+    # Must have at least 2 sentences or 40 words (reject header-only chunks)
+    word_count = len(text.split())
+    sentence_count = text.count(".") + text.count("!") + text.count("?")
+    if word_count < 40 and sentence_count < 2:
+        return False
+    return True
+
+
 @app.get("/api/v1/lessons")
 async def get_lessons(
     report_ids: str = Query(default=""),
@@ -307,6 +355,9 @@ async def get_lessons(
                 section = p.get("section_type", "")
                 if section not in ("lessons_learned", "recommendations"):
                     continue
+                text = p.get("chunk_text", "").strip()
+                if not _is_genuine_section_chunk(text, section):
+                    continue
                 if rid not in results_by_report:
                     results_by_report[rid] = {
                         "report_id": rid,
@@ -318,12 +369,10 @@ async def get_lessons(
                         "lessons_learned": [],
                         "recommendations": [],
                     }
-                text = p.get("chunk_text", "").strip()
-                if text:
-                    if section == "lessons_learned":
-                        results_by_report[rid]["lessons_learned"].append(text)
-                    else:
-                        results_by_report[rid]["recommendations"].append(text)
+                if section == "lessons_learned":
+                    results_by_report[rid]["lessons_learned"].append(text)
+                else:
+                    results_by_report[rid]["recommendations"].append(text)
             if next_offset is None:
                 break
             offset = next_offset
