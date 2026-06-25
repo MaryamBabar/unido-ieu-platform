@@ -327,6 +327,20 @@ _GARBAGE_PATTERNS = (
     "name of your", "your position", "name of company",
     "highly unsatisfactory", "highly satisfactory", "vienna international",
     "wagramerstr", "minimum organizational", "advanced degree",
+    "key informant interview", "questions for key", "criteria question",
+    "figures and tables", "project factsheet", "acknowledgements",
+    "actual project start", "planned project completion", "project duration",
+    "gef ceo endorsement", "pad issuance", "first august", "ful issuance",
+    "soalan temubual", "membangunkan dapatan", "cadangan untuk",
+)
+
+# Words that signal a fragment starting mid-sentence (not a genuine lesson)
+_FRAGMENT_STARTS = (
+    "of ", "to ", "and ", "in ", "with ", "by ", "for ", "from ", "at ",
+    "on ", "as ", "but ", "or ", "nor ", "so ", "yet ", "both ", "either ",
+    "neither ", "not ", "only ", "also ", "thus ", "hence ", "however ",
+    "moreover ", "furthermore ", "therefore ", "additionally ", "similarly ",
+    "consequently ", "nevertheless ", "nonetheless ",
 )
 
 
@@ -335,7 +349,6 @@ def _is_garbage_chunk(text: str) -> bool:
     if not text:
         return True
     lower = text.lower()
-    # Reject if chunk contains obvious garbage markers
     for pat in _GARBAGE_PATTERNS:
         if pat in lower:
             return True
@@ -347,31 +360,55 @@ def _is_garbage_chunk(text: str) -> bool:
                   any(l.lower().startswith(s) for s in _QUESTION_STARTS))
     if q_count / len(lines) > 0.35:
         return True
+    # Reject if chunk looks like a project data table (many short date-like lines)
+    date_re = re.compile(r'\b(january|february|march|april|may|june|july|august|'
+                         r'september|october|november|december|\d{4})\b', re.I)
+    date_lines = sum(1 for l in lines if date_re.search(l) and len(l) < 80)
+    if len(lines) >= 3 and date_lines / len(lines) > 0.5:
+        return True
     return False
 
 
 def _is_quality_item(text: str) -> bool:
     """Return True if this extracted item looks like a genuine lesson/recommendation."""
     t = text.strip()
-    if len(t) < 40:
+    if len(t) < 50:
         return False
-    if t.endswith("?"):
+    if t.endswith("?") or t.endswith(":"):
         return False
     lower = t.lower()
     # Reject questionnaire-style starts
     for s in _QUESTION_STARTS:
         if lower.startswith(s):
             return False
-    # Reject obvious garbage
+    # Reject obvious garbage patterns
     for pat in _GARBAGE_PATTERNS:
         if pat in lower:
             return False
-    # Must have at least 6 words
-    if len(t.split()) < 6:
+    # Must have at least 8 words
+    if len(t.split()) < 8:
         return False
-    # Reject if it looks like an abbreviation list entry (e.g. "RBM Results-based Management")
+    # Reject mid-sentence fragments (start with lowercase continuation word)
+    first_char = t[0]
+    if first_char.islower():
+        return False
+    # Reject if starts with a fragment connector word (even if capitalised after stripping)
+    for frag in _FRAGMENT_STARTS:
+        if lower.startswith(frag):
+            return False
+    # Reject abbreviation list entries (e.g. "RBM Results-based Management")
     words = t.split()
-    if len(words) <= 5 and words[0].isupper() and len(words[0]) <= 5:
+    if len(words) <= 6 and words[0].isupper() and len(words[0]) <= 6:
+        return False
+    # Reject items that are clearly table/figure captions
+    if re.match(r'^(table|figure|annex|appendix)\s+\d', lower):
+        return False
+    # Must contain at least one verb-like structure (very rough check)
+    # Items that are pure noun phrases with no verbs tend to be headings
+    if not re.search(r'\b(should|must|need|ensure|improve|strengthen|consider|'
+                     r'increase|reduce|support|develop|establish|provide|include|'
+                     r'require|recommend|is|are|was|were|will|would|can|could|'
+                     r'has|have|had|been|be)\b', lower):
         return False
     return True
 
