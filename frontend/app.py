@@ -207,8 +207,8 @@ st.markdown("""
 # ─────────────────────────────────────────────────────────────────────────────
 
 for k, v in {
-    "session_token": None, "username": None,
-    "display_name": None, "role": None,
+    "session_token": "no-auth-bypass", "username": "guest",
+    "display_name": "Guest", "role": "admin",
     "all_reports": None,          # cached report list
     "lessons_cache": {},          # report_id -> {lessons, recommendations}
     "synth_history": [],          # synthesis chat history

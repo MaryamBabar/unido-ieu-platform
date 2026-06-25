@@ -54,7 +54,13 @@ class SetActiveRequest(BaseModel):
     active: bool
 
 
+_BYPASS_TOKEN = "no-auth-bypass"
+
 def require_auth(x_session_token: Optional[str] = Header(default=None)) -> dict:
+    # Temporary bypass — remove once users.yaml is stable on Railway
+    if x_session_token == _BYPASS_TOKEN:
+        return {"username": "guest", "display_name": "Guest", "role": "admin",
+                "login_time": "bypass"}
     if not x_session_token:
         raise HTTPException(status_code=401, detail="Authentication required.")
     session = validate_session(x_session_token)
