@@ -311,9 +311,70 @@ def do_logout():
 # Text cleaning — strip PDF extraction artefacts and split into items
 # ─────────────────────────────────────────────────────────────────────────────
 
-_TOC_LINE  = re.compile(r'^.{3,60}[.\s]{3,}\d{1,3}\s*$')   # "Introduction ........ 14"
-_PAGE_NUM  = re.compile(r'^\s*\d{1,3}\s*$')                 # lone page numbers
-_SHORT_ART = re.compile(r'^.{1,12}$')                        # very short artifact lines
+_TOC_LINE  = re.compile(r'^.{3,60}[.\s]{3,}\d{1,3}\s*$')
+_PAGE_NUM  = re.compile(r'^\s*\d{1,3}\s*$')
+
+# Patterns that indicate questionnaire / ToR / garbage lines
+_QUESTION_STARTS = (
+    "what ", "how ", "did ", "do you", "are you", "were you", "please ",
+    "who ", "when ", "why ", "which ", "have you", "would you", "could you",
+    "is there", "was there", "can you",
+)
+_GARBAGE_PATTERNS = (
+    "terms of reference", "table of contents", "list of figures",
+    "list of tables", "abbreviations", "acronyms", "questionnaire",
+    "interview guide", "contact person", "please email",
+    "name of your", "your position", "name of company",
+    "highly unsatisfactory", "highly satisfactory", "vienna international",
+    "wagramerstr", "minimum organizational", "advanced degree",
+)
+
+
+def _is_garbage_chunk(text: str) -> bool:
+    """Return True if this chunk is mostly questionnaire / ToR / non-lesson content."""
+    if not text:
+        return True
+    lower = text.lower()
+    # Reject if chunk contains obvious garbage markers
+    for pat in _GARBAGE_PATTERNS:
+        if pat in lower:
+            return True
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    if not lines:
+        return True
+    # Reject if >35% of lines are questions
+    q_count = sum(1 for l in lines if l.endswith("?") or
+                  any(l.lower().startswith(s) for s in _QUESTION_STARTS))
+    if q_count / len(lines) > 0.35:
+        return True
+    return False
+
+
+def _is_quality_item(text: str) -> bool:
+    """Return True if this extracted item looks like a genuine lesson/recommendation."""
+    t = text.strip()
+    if len(t) < 40:
+        return False
+    if t.endswith("?"):
+        return False
+    lower = t.lower()
+    # Reject questionnaire-style starts
+    for s in _QUESTION_STARTS:
+        if lower.startswith(s):
+            return False
+    # Reject obvious garbage
+    for pat in _GARBAGE_PATTERNS:
+        if pat in lower:
+            return False
+    # Must have at least 6 words
+    if len(t.split()) < 6:
+        return False
+    # Reject if it looks like an abbreviation list entry (e.g. "RBM Results-based Management")
+    words = t.split()
+    if len(words) <= 5 and words[0].isupper() and len(words[0]) <= 5:
+        return False
+    return True
+
 
 def _clean_raw_text(text: str) -> str:
     """Remove table-of-contents lines, page numbers, and other PDF artefacts."""
@@ -325,9 +386,9 @@ def _clean_raw_text(text: str) -> str:
         if not stripped:
             lines.append("")
             continue
-        if _TOC_LINE.match(stripped):   # skip TOC entries
+        if _TOC_LINE.match(stripped):
             continue
-        if _PAGE_NUM.match(stripped):   # skip bare page numbers
+        if _PAGE_NUM.match(stripped):
             continue
         lines.append(line)
     cleaned = "\n".join(lines)
@@ -336,13 +397,15 @@ def _clean_raw_text(text: str) -> str:
 
 
 def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
-    # Parse chunk into individual numbered items using pure string ops (no regex).
+    # Reject entire chunk if it is questionnaire/ToR garbage
+    if _is_garbage_chunk(chunk_text):
+        return []
+
     text = _clean_raw_text(chunk_text)
     if not text:
         return []
 
     def cap_text(s):
-        # Keep first 2 sentences, max 280 chars.
         s = s.strip()
         count = 0
         for i in range(len(s) - 2):
@@ -351,7 +414,7 @@ def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
                 if count >= 2:
                     s = s[: i + 1]
                     break
-        return s[:280]
+        return s[:320]
 
     items = []
     current = []
@@ -361,7 +424,6 @@ def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
         stripped = line.strip()
         if not stripped:
             continue
-        # Detect numbered item: starts with 1-2 digits then . or ) then space
         j = 0
         while j < 2 and j < len(stripped) and stripped[j].isdigit():
             j += 1
@@ -375,26 +437,26 @@ def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
         if is_new:
             if current:
                 txt = cap_text(" ".join(current))
-                if len(txt) >= 25:
+                if _is_quality_item(txt):
                     items.append(txt)
                 if len(items) >= max_items:
                     break
-            current = [stripped[j + 2 :]]
+            current = [stripped[j + 2:]]
             in_item = True
         elif in_item:
             current.append(stripped)
 
     if current and len(items) < max_items:
         txt = cap_text(" ".join(current))
-        if len(txt) >= 25:
+        if _is_quality_item(txt):
             items.append(txt)
 
-    if len(items) >= 2:
+    if items:
         return items
 
-    # Fallback: return first 2 sentences of whole chunk
+    # Fallback: return the chunk as a single item if it passes quality check
     result = cap_text(text)
-    return [result] if len(result) >= 30 else []
+    return [result] if _is_quality_item(result) else []
 
 
 def make_excel(reports_data: list[dict]) -> bytes:
