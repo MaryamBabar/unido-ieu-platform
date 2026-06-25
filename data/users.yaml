@@ -1,0 +1,8 @@
+users:
+  maryam.babar:
+    active: true
+    created_at: '2026-06-21T14:00:23.367229+00:00'
+    created_by: setup_script
+    display_name: Maryam Babar
+    password_hash: $2b$12$ymXNVk8Tlo//1aYA18CwHeERiChk0p1mt8YuUMI.f6pqpMvir6qmS
+    role: admin
