@@ -12,6 +12,7 @@ import io
 import os
 import re
 import json
+import base64
 import httpx
 import pandas as pd
 import plotly.graph_objects as go
@@ -61,19 +62,44 @@ SDG_NAMES = {
     15: "Life on Land", 16: "Peace & Justice", 17: "Partnerships",
 }
 
-SDG_ICON_URL = "https://sdgs.un.org/sites/default/files/goals/E-WEB-Goal-{n:02d}.png"
+# ─────────────────────────────────────────────────────────────────────────────
+# SDG icon images — load from frontend/assets/sdg_01.png … sdg_17.png as base64
+# Falls back to CSS colored tile if image file not found
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ASSETS_DIR = Path(__file__).parent / "assets"
+_SDG_B64: dict = {}
+
+def _load_sdg_images():
+    for n in range(1, 18):
+        p = _ASSETS_DIR / f"sdg_{n:02d}.png"
+        if p.exists():
+            _SDG_B64[n] = base64.b64encode(p.read_bytes()).decode()
+
+_load_sdg_images()
+
 
 def sdg_badge_html(n: int, size: int = 36) -> str:
-    """Returns HTML for an SDG badge — CSS-only, no external image dependency."""
+    """Real PNG icon if available, CSS colored tile as fallback."""
+    title = f"SDG {n}: {SDG_NAMES.get(n, '')}"
+    if n in _SDG_B64:
+        return (
+            f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
+            f'title="{title}" '
+            f'style="width:{size}px;height:{size}px;border-radius:4px;margin:2px;'
+            f'vertical-align:middle;object-fit:cover;" />'
+        )
+    # CSS fallback
     color = SDG_COLORS.get(n, "#888")
     font_size = max(9, size // 3)
     return (
-        f'<span title="SDG {n}: {SDG_NAMES.get(n,"")}" '
+        f'<span title="{title}" '
         f'style="display:inline-flex;align-items:center;justify-content:center;'
         f'width:{size}px;height:{size}px;background:{color};color:white;font-weight:800;'
         f'border-radius:4px;font-size:{font_size}px;margin:2px;vertical-align:middle;'
         f'font-family:Arial,sans-serif;letter-spacing:-0.5px;">{n}</span>'
     )
+
 
 def sdg_badges_row(sdg_list: list, size: int = 32) -> str:
     return "".join(sdg_badge_html(n, size) for n in sorted(sdg_list) if 1 <= n <= 17)
@@ -1301,28 +1327,38 @@ def show_main_app():
                                           label_visibility="collapsed", key="f_thematic")
         with st.expander("SDGs", expanded=False):
             sdg_sel_nums = []
-            # 3-column CSS badge grid — no external images, always renders
             for row_start in range(1, 18, 3):
                 row_sdgs = list(range(row_start, min(row_start + 3, 18)))
                 cols = st.columns(3)
                 for i, n in enumerate(row_sdgs):
                     with cols[i]:
-                        color = SDG_COLORS[n]
-                        name_short = SDG_NAMES[n].split()[0]  # first word only
-                        st.markdown(
-                            f'<div style="text-align:center;margin-bottom:2px;">'
-                            f'<div style="display:inline-flex;flex-direction:column;'
-                            f'align-items:center;justify-content:center;'
-                            f'width:52px;height:52px;background:{color};color:white;'
-                            f'font-weight:800;border-radius:6px;font-size:16px;'
-                            f'font-family:Arial,sans-serif;cursor:default;" '
-                            f'title="SDG {n}: {SDG_NAMES[n]}">'
-                            f'<span style="font-size:18px;line-height:1;">{n}</span>'
-                            f'<span style="font-size:7px;font-weight:600;opacity:0.9;'
-                            f'margin-top:1px;letter-spacing:0.3px;">{name_short[:6].upper()}</span>'
-                            f'</div></div>',
-                            unsafe_allow_html=True,
-                        )
+                        # Show real PNG if loaded, else CSS tile
+                        if n in _SDG_B64:
+                            st.markdown(
+                                f'<div style="text-align:center;margin-bottom:2px;">'
+                                f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
+                                f'title="SDG {n}: {SDG_NAMES[n]}" '
+                                f'style="width:54px;height:54px;border-radius:6px;'
+                                f'object-fit:cover;display:block;margin:0 auto;" /></div>',
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            color = SDG_COLORS[n]
+                            name_short = SDG_NAMES[n].split()[0]
+                            st.markdown(
+                                f'<div style="text-align:center;margin-bottom:2px;">'
+                                f'<div style="display:inline-flex;flex-direction:column;'
+                                f'align-items:center;justify-content:center;'
+                                f'width:54px;height:54px;background:{color};color:white;'
+                                f'font-weight:800;border-radius:6px;font-size:16px;'
+                                f'font-family:Arial,sans-serif;" '
+                                f'title="SDG {n}: {SDG_NAMES[n]}">'
+                                f'<span style="font-size:18px;line-height:1;">{n}</span>'
+                                f'<span style="font-size:7px;font-weight:600;opacity:0.9;">'
+                                f'{name_short[:6].upper()}</span>'
+                                f'</div></div>',
+                                unsafe_allow_html=True,
+                            )
                         checked = st.checkbox(
                             SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
                             label_visibility="collapsed",
@@ -1330,7 +1366,7 @@ def show_main_app():
                         if checked:
                             sdg_sel_nums.append(n)
             if sdg_sel_nums:
-                badges = "".join(sdg_badge_html(n, 22) for n in sdg_sel_nums)
+                badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
                 st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
             if st.button("Clear SDGs", key="clear_sdgs", use_container_width=True):
                 for n in range(1, 18):
@@ -1390,6 +1426,46 @@ def show_main_app():
                 qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
                 st.markdown(f'<span class="dot {qcls}"></span> Qdrant '
                             f'{"✓" if h.get("qdrant_connected") else "✗"}',
+                            unsafe_allow_html=True)
+                if h.get("document_count", 0):
+                    st.caption(f"{h['document_count']:,} chunks indexed")
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_names = ["🔍 Search & Browse", "🤝 Synthesis", "📊 Visualize", "🎯 OECD-DAC"]
+    if is_admin:
+        tab_names.append("⚙️ Admin")
+
+    tabs = st.tabs(tab_names)
+
+    with tabs[0]:
+        show_search_tab(filters)
+    with tabs[1]:
+        show_synthesis_tab(filters)
+    with tabs[2]:
+        show_visualize_tab()
+    with tabs[3]:
+        show_dac_tab()
+    if is_admin:
+        with tabs[4]:
+            show_admin_tab()
+
+    st.divider()
+    st.markdown(
+        "<p style='text-align:center;color:#9ca3af;font-size:.72rem;'>"
+        "UNIDO IEU Evaluation Intelligence Platform · Internal use only · "
+        "Retrieved passages should be verified against source documents before formal citation."
+        "</p>",
+        unsafe_allow_html=True,
+    )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Router
+# ─────────────────────────────────────────────────────────────────────────────
+
+if not st.session_state.session_token:
+    show_login_page()
+else:
+    show_main_app()
                             unsafe_allow_html=True)
                 if h.get("document_count", 0):
                     st.caption(f"{h['document_count']:,} chunks indexed")
