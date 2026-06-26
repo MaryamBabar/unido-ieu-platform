@@ -589,20 +589,12 @@ def show_search_tab(filters: dict):
     if filters["sdgs"]:
         filtered = [r for r in filtered
                     if any(s in (r.get("sdgs") or []) for s in filters["sdgs"])]
-    if filters["year_min"] or filters["year_max"]:
-        ymin = filters["year_min"] or 0
-        ymax = filters["year_max"] or 9999
-        filtered = [r for r in filtered
-                    if ymin <= (r.get("year") or 0) <= ymax]
+    if filters.get("years"):
+        filtered = [r for r in filtered if r.get("year") in filters["years"]]
     if filters["eval_type"]:
         filtered = [r for r in filtered if r.get("evaluation_type") in filters["eval_type"]]
     if filters["region"]:
         filtered = [r for r in filtered if r.get("region") in filters["region"]]
-
-    # ── SDG all-17 legend ────────────────────────────────────────────────────
-    st.markdown("#### SDG Reference Icons")
-    show_sdg_legend()
-    st.divider()
 
     # ── Controls row ─────────────────────────────────────────────────────────
     col_count, col_refresh, col_export = st.columns([3, 1, 1])
@@ -1421,88 +1413,82 @@ def show_main_app():
         st.divider()
 
         st.markdown("### Filters")
-        with st.expander("Thematic Area", expanded=False):
-            thematic_sel = st.multiselect("Thematic", THEMATIC_AREAS,
-                                          label_visibility="collapsed", key="f_thematic")
-        with st.expander("SDGs", expanded=False):
-            sdg_sel_nums = []
-            for row_start in range(1, 18, 3):
-                row_sdgs = list(range(row_start, min(row_start + 3, 18)))
-                cols = st.columns(3)
-                for i, n in enumerate(row_sdgs):
-                    with cols[i]:
-                        # Show real PNG if loaded, else CSS tile
-                        if n in _SDG_B64:
-                            st.markdown(
-                                f'<div style="text-align:center;margin-bottom:2px;">'
-                                f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
-                                f'title="SDG {n}: {SDG_NAMES[n]}" '
-                                f'style="width:54px;height:54px;border-radius:6px;'
-                                f'object-fit:cover;display:block;margin:0 auto;" /></div>',
-                                unsafe_allow_html=True,
+        with st.form(key="filter_form"):
+            with st.expander("Thematic Area", expanded=False):
+                thematic_sel = st.multiselect("Thematic", THEMATIC_AREAS,
+                                              label_visibility="collapsed", key="f_thematic")
+            with st.expander("SDGs", expanded=False):
+                sdg_sel_nums = []
+                for row_start in range(1, 18, 3):
+                    row_sdgs = list(range(row_start, min(row_start + 3, 18)))
+                    cols = st.columns(3)
+                    for i, n in enumerate(row_sdgs):
+                        with cols[i]:
+                            if n in _SDG_B64:
+                                st.markdown(
+                                    f'<div style="text-align:center;margin-bottom:2px;">'
+                                    f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
+                                    f'title="SDG {n}: {SDG_NAMES[n]}" '
+                                    f'style="width:54px;height:54px;border-radius:6px;'
+                                    f'object-fit:cover;display:block;margin:0 auto;" /></div>',
+                                    unsafe_allow_html=True,
+                                )
+                            else:
+                                color = SDG_COLORS[n]
+                                name_short = SDG_NAMES[n].split()[0]
+                                st.markdown(
+                                    f'<div style="text-align:center;margin-bottom:2px;">'
+                                    f'<div style="display:inline-flex;flex-direction:column;'
+                                    f'align-items:center;justify-content:center;'
+                                    f'width:54px;height:54px;background:{color};color:white;'
+                                    f'font-weight:800;border-radius:6px;font-size:16px;'
+                                    f'font-family:Arial,sans-serif;" '
+                                    f'title="SDG {n}: {SDG_NAMES[n]}">'
+                                    f'<span style="font-size:18px;line-height:1;">{n}</span>'
+                                    f'<span style="font-size:7px;font-weight:600;opacity:0.9;">'
+                                    f'{name_short[:6].upper()}</span>'
+                                    f'</div></div>',
+                                    unsafe_allow_html=True,
+                                )
+                            checked = st.checkbox(
+                                SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
+                                label_visibility="collapsed",
                             )
-                        else:
-                            color = SDG_COLORS[n]
-                            name_short = SDG_NAMES[n].split()[0]
-                            st.markdown(
-                                f'<div style="text-align:center;margin-bottom:2px;">'
-                                f'<div style="display:inline-flex;flex-direction:column;'
-                                f'align-items:center;justify-content:center;'
-                                f'width:54px;height:54px;background:{color};color:white;'
-                                f'font-weight:800;border-radius:6px;font-size:16px;'
-                                f'font-family:Arial,sans-serif;" '
-                                f'title="SDG {n}: {SDG_NAMES[n]}">'
-                                f'<span style="font-size:18px;line-height:1;">{n}</span>'
-                                f'<span style="font-size:7px;font-weight:600;opacity:0.9;">'
-                                f'{name_short[:6].upper()}</span>'
-                                f'</div></div>',
-                                unsafe_allow_html=True,
-                            )
-                        checked = st.checkbox(
-                            SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
-                            label_visibility="collapsed",
-                        )
-                        if checked:
-                            sdg_sel_nums.append(n)
-            if sdg_sel_nums:
-                badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
-                st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
-            if st.button("Clear SDGs", key="clear_sdgs", use_container_width=True):
-                for n in range(1, 18):
-                    st.session_state[f"sdg_cb_{n}"] = False
-                st.rerun()
-        with st.expander("Evaluation Type", expanded=False):
-            eval_type_sel = st.multiselect(
-                "Type",
-                ["Project Evaluation", "Strategic Evaluation", "Country Evaluation",
-                 "Synthesis", "Reference Document"],
-                label_visibility="collapsed", key="f_eval_type",
-            )
-        with st.expander("Region", expanded=False):
-            region_sel = st.multiselect(
-                "Region",
-                ["Africa", "Asia", "Europe", "Latin America", "Middle East", "Global"],
-                label_visibility="collapsed", key="f_region",
-            )
-        with st.expander("Year Range", expanded=False):
-            yr = st.slider("Year", 2000, 2025, (2010, 2025), key="f_year")
-
-        with st.expander("DAC Criteria (synthesis filter)", expanded=False):
-            dac_sel = st.multiselect(
-                "DAC",
-                ["Relevance", "Coherence", "Effectiveness", "Efficiency",
-                 "Impact", "Sustainability"],
-                label_visibility="collapsed", key="f_dac",
-            )
+                            if checked:
+                                sdg_sel_nums.append(n)
+                if sdg_sel_nums:
+                    badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
+                    st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
+            with st.expander("Year", expanded=False):
+                yr_sel = st.selectbox(
+                    "Year",
+                    ["All years", 2025, 2024, 2023, 2022, 2021],
+                    label_visibility="collapsed", key="f_year",
+                )
+            with st.expander("Evaluation Type", expanded=False):
+                eval_type_sel = st.multiselect(
+                    "Type",
+                    ["Project Evaluation", "Strategic Evaluation", "Country Evaluation",
+                     "Synthesis", "Reference Document"],
+                    label_visibility="collapsed", key="f_eval_type",
+                )
+            with st.expander("Region", expanded=False):
+                region_sel = st.multiselect(
+                    "Region",
+                    ["Africa", "Asia", "Europe", "Latin America", "Middle East", "Global"],
+                    label_visibility="collapsed", key="f_region",
+                )
+            st.form_submit_button("Search", use_container_width=True, type="primary")
 
         filters = {
             "thematic":   thematic_sel,
             "sdgs":       sdg_sel_nums,
             "eval_type":  eval_type_sel,
             "region":     region_sel,
-            "year_min":   yr[0] if yr[0] > 2000 else None,
-            "year_max":   yr[1] if yr[1] < 2025 else None,
-            "dac":        dac_sel,
+            "years":      [yr_sel] if yr_sel != "All years" else [],
+            "year_min":   yr_sel if yr_sel != "All years" else None,
+            "year_max":   yr_sel if yr_sel != "All years" else None,
+            "dac":        [],
         }
 
         st.divider()
@@ -1530,7 +1516,7 @@ def show_main_app():
                     st.caption(f"{h['document_count']:,} chunks indexed")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_names = ["🔍 Search & Browse", "🤝 Synthesis", "📊 Visualize", "🎯 OECD-DAC"]
+    tab_names = ["Search & Browse", "🤝 Synthesis", "📊 Visualize", "🎯 OECD-DAC"]
     if is_admin:
         tab_names.append("⚙️ Admin")
 
