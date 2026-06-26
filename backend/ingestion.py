@@ -29,21 +29,24 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # UNIDO section detection
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Anchored patterns — match the FULL heading line, not a substring.
+# This prevents mid-sentence mentions (e.g. "The recommendations from the MTR were...")
+# from triggering a false section change.
 SECTION_PATTERNS = [
-    ("lessons_learned",   r"\b(lessons?\s+learned|lessons?\s+learnt|key\s+lessons?)\b"),
-    ("recommendations",   r"\brecommendations?\b"),
-    ("conclusions",       r"\b(conclusions?|overall\s+conclusions?)\b"),
-    ("relevance",         r"\b(relevance|criterion\s+1)\b"),
-    ("coherence",         r"\b(coherence)\b"),
-    ("effectiveness",     r"\b(effectiveness|criterion\s+[23])\b"),
-    ("efficiency",        r"\b(efficiency|criterion\s+[34])\b"),
-    ("impact",            r"\b(impact|criterion\s+[45])\b"),
-    ("sustainability",    r"\b(sustainability|criterion\s+[56])\b"),
-    ("executive_summary", r"\b(executive\s+summary|management\s+summary)\b"),
-    ("findings",          r"\b(findings?|evaluation\s+findings?|key\s+findings?)\b"),
-    ("methodology",       r"\b(methodology|evaluation\s+approach)\b"),
-    ("background",        r"\b(background|introduction|project\s+description)\b"),
-    ("annexes",           r"\b(annex|appendix)\b"),
+    ("lessons_learned",   r"^(key\s+)?(lessons?\s+learned(\s+and\s+(good\s+practices?|key\s+practices?))?|lessons?\s+learnt|good\s+practices?\s+and\s+lessons?\s+learned)$"),
+    ("recommendations",   r"^((conclusions?\s+(and|/)\s+)?recommendations?|recommendations?\s+and\s+(conclusions?|way\s+forward))$"),
+    ("conclusions",       r"^(overall\s+)?conclusions?$"),
+    ("relevance",         r"^(relevance|criterion\s+1)$"),
+    ("coherence",         r"^coherence$"),
+    ("effectiveness",     r"^(effectiveness|criterion\s+[23])$"),
+    ("efficiency",        r"^(efficiency|criterion\s+[34])$"),
+    ("impact",            r"^(impact|criterion\s+[45])$"),
+    ("sustainability",    r"^(sustainability|criterion\s+[56])$"),
+    ("executive_summary", r"^(executive\s+summary|management\s+summary)$"),
+    ("findings",          r"^(key\s+)?(findings?|evaluation\s+findings?)$"),
+    ("methodology",       r"^(methodology|evaluation\s+approach|evaluation\s+methodology)$"),
+    ("background",        r"^(background|introduction|project\s+description|project\s+background)$"),
+    ("annexes",           r"^(annex|appendix)\s*[a-z0-9:\s]*$"),
 ]
 
 HIGH_VALUE_SECTIONS = {"lessons_learned", "recommendations", "conclusions", "findings"}
@@ -109,9 +112,33 @@ def extract_pdf_text(pdf_path: Path) -> tuple[str, int, int]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def detect_section(text: str) -> str:
-    text_lower = text.lower().strip()
+    """
+    Return the section name ONLY if the line looks like a standalone heading.
+    Requirements:
+      - Short (≤ 70 chars) — headings are concise
+      - Does not end with sentence punctuation (., , ; : ? !)
+      - Does not start with a lowercase letter
+      - Matches an anchored section pattern (full-line match, not substring)
+    """
+    s = text.strip()
+    if not s:
+        return "body"
+    # Must be short enough to be a heading
+    if len(s) > 70:
+        return "body"
+    # Must not end with sentence-ending punctuation
+    if s[-1] in ".,:;?!":
+        return "body"
+    # Must not start with lowercase (inline references start lowercase mid-sentence)
+    if s[0].islower():
+        return "body"
+    # Must not look like a sentence (contains common verb patterns)
+    if re.search(r"\b(was|were|is|are|has|have|had|will|would|should|must|can|could|"
+                 r"from|based|during|following|including|according)\b", s, re.I) and len(s) > 40:
+        return "body"
+    s_lower = s.lower()
     for name, pattern in SECTION_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        if re.match(pattern, s_lower, re.IGNORECASE):
             return name
     return "body"
 
@@ -125,6 +152,7 @@ def chunk_document(full_text: str) -> list[dict]:
     current_section = "body"
     current_lines = []
     current_page = 1
+    prev_blank = True   # treat document start as preceded by blank line
 
     for line in lines:
         if PAGE_MARKER_RE.match(line.strip()):
@@ -132,10 +160,16 @@ def chunk_document(full_text: str) -> list[dict]:
                 current_page = int(line.strip()[6:-1])
             except ValueError:
                 pass
+            prev_blank = True   # page boundary counts as blank
             continue
 
         stripped = line.strip()
-        if stripped and len(stripped) < 100 and detect_section(stripped) != "body":
+        is_blank = not stripped
+
+        # A line is a section heading only if:
+        #   1. It is preceded by a blank line (standalone, not mid-paragraph)
+        #   2. detect_section() confirms it matches a heading pattern
+        if stripped and prev_blank and detect_section(stripped) != "body":
             if current_lines:
                 sections.append({
                     "section_type": current_section,
@@ -146,6 +180,8 @@ def chunk_document(full_text: str) -> list[dict]:
             current_lines = []
         else:
             current_lines.append(line)
+
+        prev_blank = is_blank
 
     if current_lines:
         sections.append({
