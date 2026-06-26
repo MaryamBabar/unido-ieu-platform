@@ -332,6 +332,11 @@ _GARBAGE_PATTERNS = (
     "actual project start", "planned project completion", "project duration",
     "gef ceo endorsement", "pad issuance", "first august", "ful issuance",
     "soalan temubual", "membangunkan dapatan", "cadangan untuk",
+    # Intro sentences that introduce but are not lessons/recs themselves
+    "the following lessons are", "the following recommendations are",
+    "the following lessons were", "the following recommendations were",
+    "lessons are proposed for consideration", "are proposed for consideration",
+    "following key lessons", "lessons identified in this evaluation",
 )
 
 # Words that signal a fragment starting mid-sentence (not a genuine lesson)
@@ -403,12 +408,21 @@ def _is_quality_item(text: str) -> bool:
     # Reject items that are clearly table/figure captions
     if re.match(r'^(table|figure|annex|appendix)\s+\d', lower):
         return False
-    # Must contain at least one verb-like structure (very rough check)
-    # Items that are pure noun phrases with no verbs tend to be headings
+    # Detect garbled PDF table text: institution name repeated 2+ times in first 160 chars
+    # e.g. "Recommendation 2: UNIDO and GEF ... UNIDO During the ..."
+    head = lower[:160]
+    for inst in ("unido", "gef ", "undp", "unep"):
+        if head.count(inst) >= 2:
+            return False
+    # Reject intro sentences ending with colon (they introduce a list, not a lesson)
+    if re.search(r'(following|consideration|below|noted|identified)\s*:\s*$', lower):
+        return False
+    # Must contain at least one verb-like structure
     if not re.search(r'\b(should|must|need|ensure|improve|strengthen|consider|'
                      r'increase|reduce|support|develop|establish|provide|include|'
                      r'require|recommend|is|are|was|were|will|would|can|could|'
-                     r'has|have|had|been|be)\b', lower):
+                     r'has|have|had|been|be|demonstrated|showed|found|proved|'
+                     r'contributed|resulted|enabled|allowed)\b', lower):
         return False
     return True
 

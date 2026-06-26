@@ -264,3 +264,401 @@ def check_qdrant_health() -> dict:
     except Exception as e:
         logger.error(f"Qdrant health check failed: {e}")
         return {"qdrant_connected": False, "collection_exists": False, "document_count": 0}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# L&R retrieval: 2-stage HyDE semantic search (no LLM required)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Realistic evaluation-style texts used as semantic anchors (HyDE without LLM).
+# Embedding similarity to these templates scores genuine L&R text highly and
+# questionnaire / ToR / table garbage text poorly.
+
+_LESSON_HYDE_TEMPLATES = [
+    (
+        "A key lesson from this evaluation is that project sustainability requires strong national "
+        "ownership and capacity building from the outset of implementation. The evaluation found "
+        "that embedding expertise in national institutions leads to lasting impact."
+    ),
+    (
+        "The evaluation demonstrated that early and continuous stakeholder engagement, particularly "
+        "with beneficiary communities, contributed significantly to project effectiveness and "
+        "ownership. Lessons learned include the importance of participatory approaches in design."
+    ),
+    (
+        "An important lesson learned is that integrating gender considerations and social inclusion "
+        "into project design and monitoring frameworks from the start leads to more equitable "
+        "outcomes. Evidence shows that projects neglecting gender dimensions achieved lower ratings."
+    ),
+    (
+        "Experience shows that adequate financing mechanisms and cost-effectiveness analysis should "
+        "be built into project design. A critical lesson is that over-reliance on a single donor "
+        "creates fragility in long-term programme sustainability."
+    ),
+    (
+        "The evaluation found that technical assistance is most effective when complemented by "
+        "institutional capacity building and knowledge transfer to national counterparts. "
+        "Critical success factors include strong government commitment and clear exit strategies."
+    ),
+]
+
+_REC_HYDE_TEMPLATES = [
+    (
+        "UNIDO should strengthen the monitoring and evaluation framework to enable adaptive "
+        "management throughout project implementation. A results-based management system must "
+        "be established with clear indicators, baselines, and regular progress reviews."
+    ),
+    (
+        "The project management unit must ensure adequate resources are allocated for capacity "
+        "development and knowledge transfer activities. UNIDO should provide targeted technical "
+        "assistance to national counterparts to build long-term institutional capabilities."
+    ),
+    (
+        "Future projects should incorporate gender-responsive indicators from the design phase "
+        "to ensure equitable participation and benefit distribution. UNIDO must mainstream "
+        "gender and social inclusion across all project components and reporting mechanisms."
+    ),
+    (
+        "UNIDO and the government counterpart should establish a clear exit strategy and "
+        "sustainability plan well before project closure. It is recommended that the project "
+        "develop financial sustainability mechanisms to ensure continuity after UNIDO support ends."
+    ),
+    (
+        "The evaluation recommends that UNIDO strengthen coordination mechanisms with other "
+        "UN agencies and development partners to avoid duplication and enhance synergies. "
+        "UNIDO should take a more proactive role in convening multi-stakeholder platforms."
+    ),
+]
+
+_LR_LESSON_KW = frozenset([
+    "lesson", "learned", "learning", "experience show", "experience suggest",
+    "demonstrated", "evidence show", "evaluation found", "evaluation show",
+    "evaluation demonstrate", "proved to be", "key finding", "important finding",
+    "critical success", "success factor", "it was found", "the evaluation",
+    "contribut", "important to note", "it is important", "resulted in",
+    "enabled", "allowed", "good practice",
+])
+_LR_REC_KW = frozenset([
+    "recommend", "should ", "must ", "advised", "proposed", "suggest",
+    "action needed", "need to ", "needs to ", "ought to", "it is essential",
+    "it is important to", "should be", "must be", "will need",
+    "it is recommended", "the project should", "unido should",
+])
+
+
+def _lr_keyword_score(text: str, mode: str) -> float:
+    """Return 0.0–1.0 keyword density score for the given mode."""
+    lower = text.lower()
+    keywords = _LR_LESSON_KW if mode == "lessons" else _LR_REC_KW
+    hits = sum(1 for kw in keywords if kw in lower)
+    return min(hits / 3.0, 1.0)
+
+
+def search_lr_semantic(
+    mode: str,                           # "lessons" or "recommendations"
+    report_ids: Optional[list[str]] = None,
+    top_per_template: int = 15,
+    top_final: int = 6,
+) -> tuple[dict, dict]:
+    """
+    2-stage HyDE-style semantic retrieval for lessons learned / recommendations.
+
+    Stage 1 — Multi-template dense search:
+        Embed each of several realistic evaluation text templates and search
+        Qdrant. This is HyDE (Hypothetical Document Embeddings) without an LLM —
+        hand-crafted realistic examples replace LLM-generated hypothetical answers.
+        Multiple templates improve recall across different phrasing styles.
+
+    Stage 2 — Hybrid scoring + deduplication:
+        final_score = semantic_similarity × 0.65
+                    + keyword_density    × 0.25
+                    + section_label_bonus× 0.10
+        Best N chunks per report are returned.
+
+    Returns:
+        texts_by_report_id: {rid: [chunk_text, ...]}
+        meta_by_report_id:  {rid: {title, year, country, region, thematic_category, report_id}}
+    """
+    embed = get_embed_model()
+    client = get_qdrant()
+
+    templates = _LESSON_HYDE_TEMPLATES if mode == "lessons" else _REC_HYDE_TEMPLATES
+    target_label = "lessons_learned" if mode == "lessons" else "recommendations"
+
+    qdrant_filter: Optional[Filter] = None
+    if report_ids:
+        qdrant_filter = Filter(
+            must=[FieldCondition(key="report_id", match=MatchAny(any=report_ids))]
+        )
+
+    # Stage 1 — collect unique candidates (dedup by point id, keep best score)
+    best_by_id: dict = {}  # point_id -> {text, report_id, section_type, sem_score, meta}
+
+    for template in templates:
+        vec = embed.encode(template, normalize_embeddings=True).tolist()
+        try:
+            hits = client.search(
+                collection_name=config.QDRANT_COLLECTION,
+                query_vector=vec,
+                query_filter=qdrant_filter,
+                limit=top_per_template,
+                with_payload=True,
+                score_threshold=0.30,
+            )
+        except Exception as e:
+            logger.warning(f"search_lr_semantic [{mode}] template search failed: {e}")
+            continue
+
+        for hit in hits:
+            pid = str(hit.id)
+            p = hit.payload or {}
+            if pid not in best_by_id or float(hit.score) > best_by_id[pid]["sem_score"]:
+                best_by_id[pid] = {
+                    "text":         p.get("chunk_text", "").strip(),
+                    "report_id":    p.get("report_id", ""),
+                    "section_type": p.get("section_type", "body"),
+                    "sem_score":    float(hit.score),
+                    "meta": {
+                        "title":            p.get("title", ""),
+                        "year":             p.get("year"),
+                        "country":          p.get("country", ""),
+                        "region":           p.get("region", ""),
+                        "thematic_category": p.get("thematic_category", ""),
+                    },
+                }
+
+    if not best_by_id:
+        return {}, {}
+
+    # Stage 2 — score, group by report, take top N
+    report_candidates: dict = {}  # rid -> [(final_score, text)]
+    report_meta: dict = {}
+
+    for cdata in best_by_id.values():
+        text = cdata["text"]
+        if not text or len(text) < 80:
+            continue
+
+        sem       = cdata["sem_score"]
+        kw        = _lr_keyword_score(text, mode)
+        label_bon = 0.10 if cdata["section_type"] == target_label else 0.0
+        final     = sem * 0.65 + kw * 0.25 + label_bon
+
+        rid = cdata["report_id"]
+        if not rid:
+            continue
+
+        report_candidates.setdefault(rid, []).append((final, text))
+        if rid not in report_meta:
+            report_meta[rid] = {**cdata["meta"], "report_id": rid}
+
+    texts_by_report: dict = {}
+    for rid, scored in report_candidates.items():
+        scored.sort(key=lambda x: x[0], reverse=True)
+        texts_by_report[rid] = [t for _, t in scored[:top_final]]
+
+    logger.info(
+        f"search_lr_semantic [{mode}]: {len(best_by_id)} candidates → "
+        f"{sum(len(v) for v in texts_by_report.values())} chunks across "
+        f"{len(texts_by_report)} reports"
+    )
+    return texts_by_report, report_meta
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# L&R retrieval: 2-stage HyDE semantic search (no LLM required)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Realistic evaluation-style texts used as semantic anchors (HyDE without LLM).
+# Embedding similarity to these templates scores genuine L&R text highly and
+# questionnaire / ToR / table garbage text poorly.
+
+_LESSON_HYDE_TEMPLATES = [
+    (
+        "A key lesson from this evaluation is that project sustainability requires strong national "
+        "ownership and capacity building from the outset of implementation. The evaluation found "
+        "that embedding expertise in national institutions leads to lasting impact."
+    ),
+    (
+        "The evaluation demonstrated that early and continuous stakeholder engagement, particularly "
+        "with beneficiary communities, contributed significantly to project effectiveness and "
+        "ownership. Lessons learned include the importance of participatory approaches in design."
+    ),
+    (
+        "An important lesson learned is that integrating gender considerations and social inclusion "
+        "into project design and monitoring frameworks from the start leads to more equitable "
+        "outcomes. Evidence shows that projects neglecting gender dimensions achieved lower ratings."
+    ),
+    (
+        "Experience shows that adequate financing mechanisms and cost-effectiveness analysis should "
+        "be built into project design. A critical lesson is that over-reliance on a single donor "
+        "creates fragility in long-term programme sustainability."
+    ),
+    (
+        "The evaluation found that technical assistance is most effective when complemented by "
+        "institutional capacity building and knowledge transfer to national counterparts. "
+        "Critical success factors include strong government commitment and clear exit strategies."
+    ),
+]
+
+_REC_HYDE_TEMPLATES = [
+    (
+        "UNIDO should strengthen the monitoring and evaluation framework to enable adaptive "
+        "management throughout project implementation. A results-based management system must "
+        "be established with clear indicators, baselines, and regular progress reviews."
+    ),
+    (
+        "The project management unit must ensure adequate resources are allocated for capacity "
+        "development and knowledge transfer activities. UNIDO should provide targeted technical "
+        "assistance to national counterparts to build long-term institutional capabilities."
+    ),
+    (
+        "Future projects should incorporate gender-responsive indicators from the design phase "
+        "to ensure equitable participation and benefit distribution. UNIDO must mainstream "
+        "gender and social inclusion across all project components and reporting mechanisms."
+    ),
+    (
+        "UNIDO and the government counterpart should establish a clear exit strategy and "
+        "sustainability plan well before project closure. It is recommended that the project "
+        "develop financial sustainability mechanisms to ensure continuity after UNIDO support ends."
+    ),
+    (
+        "The evaluation recommends that UNIDO strengthen coordination mechanisms with other "
+        "UN agencies and development partners to avoid duplication and enhance synergies. "
+        "UNIDO should take a more proactive role in convening multi-stakeholder platforms."
+    ),
+]
+
+_LR_LESSON_KW = frozenset([
+    "lesson", "learned", "learning", "experience show", "experience suggest",
+    "demonstrated", "evidence show", "evaluation found", "evaluation show",
+    "evaluation demonstrate", "proved to be", "key finding", "important finding",
+    "critical success", "success factor", "it was found", "the evaluation",
+    "contribut", "important to note", "it is important", "resulted in",
+    "enabled", "allowed", "good practice",
+])
+_LR_REC_KW = frozenset([
+    "recommend", "should ", "must ", "advised", "proposed", "suggest",
+    "action needed", "need to ", "needs to ", "ought to", "it is essential",
+    "it is important to", "should be", "must be", "will need",
+    "it is recommended", "the project should", "unido should",
+])
+
+
+def _lr_keyword_score(text: str, mode: str) -> float:
+    """Return 0.0-1.0 keyword density score for the given mode."""
+    lower = text.lower()
+    keywords = _LR_LESSON_KW if mode == "lessons" else _LR_REC_KW
+    hits = sum(1 for kw in keywords if kw in lower)
+    return min(hits / 3.0, 1.0)
+
+
+def search_lr_semantic(
+    mode: str,
+    report_ids: Optional[list] = None,
+    top_per_template: int = 15,
+    top_final: int = 6,
+) -> tuple:
+    """
+    2-stage HyDE-style semantic retrieval for lessons learned / recommendations.
+
+    Stage 1 — Multi-template dense search:
+        Embed each realistic evaluation text template and search Qdrant.
+        This is HyDE (Hypothetical Document Embeddings) without an LLM:
+        hand-crafted examples replace LLM-generated hypothetical answers.
+        Multiple templates improve recall across different phrasing styles.
+
+    Stage 2 — Hybrid scoring + deduplication:
+        final_score = semantic_similarity x 0.65
+                    + keyword_density    x 0.25
+                    + section_label_bonus x 0.10
+        Best N chunks per report are returned.
+
+    Returns:
+        texts_by_report_id: {rid: [chunk_text, ...]}
+        meta_by_report_id:  {rid: {title, year, country, region, thematic_category, report_id}}
+    """
+    embed = get_embed_model()
+    client = get_qdrant()
+
+    templates = _LESSON_HYDE_TEMPLATES if mode == "lessons" else _REC_HYDE_TEMPLATES
+    target_label = "lessons_learned" if mode == "lessons" else "recommendations"
+
+    qdrant_filter = None
+    if report_ids:
+        qdrant_filter = Filter(
+            must=[FieldCondition(key="report_id", match=MatchAny(any=report_ids))]
+        )
+
+    # Stage 1 — collect unique candidates (dedup by point id, keep best score)
+    best_by_id: dict = {}
+
+    for template in templates:
+        vec = embed.encode(template, normalize_embeddings=True).tolist()
+        try:
+            hits = client.search(
+                collection_name=config.QDRANT_COLLECTION,
+                query_vector=vec,
+                query_filter=qdrant_filter,
+                limit=top_per_template,
+                with_payload=True,
+                score_threshold=0.30,
+            )
+        except Exception as e:
+            logger.warning(f"search_lr_semantic [{mode}] failed: {e}")
+            continue
+
+        for hit in hits:
+            pid = str(hit.id)
+            p = hit.payload or {}
+            if pid not in best_by_id or float(hit.score) > best_by_id[pid]["sem_score"]:
+                best_by_id[pid] = {
+                    "text":         p.get("chunk_text", "").strip(),
+                    "report_id":    p.get("report_id", ""),
+                    "section_type": p.get("section_type", "body"),
+                    "sem_score":    float(hit.score),
+                    "meta": {
+                        "title":             p.get("title", ""),
+                        "year":              p.get("year"),
+                        "country":           p.get("country", ""),
+                        "region":            p.get("region", ""),
+                        "thematic_category": p.get("thematic_category", ""),
+                    },
+                }
+
+    if not best_by_id:
+        return {}, {}
+
+    # Stage 2 — score, group by report, take top N
+    report_candidates: dict = {}
+    report_meta: dict = {}
+
+    for cdata in best_by_id.values():
+        text = cdata["text"]
+        if not text or len(text) < 80:
+            continue
+
+        sem       = cdata["sem_score"]
+        kw        = _lr_keyword_score(text, mode)
+        label_bon = 0.10 if cdata["section_type"] == target_label else 0.0
+        final     = sem * 0.65 + kw * 0.25 + label_bon
+
+        rid = cdata["report_id"]
+        if not rid:
+            continue
+
+        report_candidates.setdefault(rid, []).append((final, text))
+        if rid not in report_meta:
+            report_meta[rid] = {**cdata["meta"], "report_id": rid}
+
+    texts_by_report: dict = {}
+    for rid, scored in report_candidates.items():
+        scored.sort(key=lambda x: x[0], reverse=True)
+        texts_by_report[rid] = [t for _, t in scored[:top_final]]
+
+    logger.info(
+        f"search_lr_semantic [{mode}]: {len(best_by_id)} candidates -> "
+        f"{sum(len(v) for v in texts_by_report.values())} chunks across "
+        f"{len(texts_by_report)} reports"
+    )
+    return texts_by_report, report_meta

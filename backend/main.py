@@ -335,48 +335,44 @@ async def get_lessons(
     report_ids: str = Query(default=""),
     session: dict = Depends(require_auth),
 ):
-    """Get lessons learned and recommendations grouped by report."""
+    """
+    Get lessons learned and recommendations using 2-stage HyDE semantic RAG.
+
+    Does NOT rely on section_type labels (which may be noisy after ingestion).
+    Instead, uses pre-crafted realistic evaluation text templates as semantic
+    anchors (HyDE without LLM) to surface chunks that genuinely look like
+    lessons or recommendations, then scores them with hybrid weighting:
+        final_score = semantic_similarity × 0.65
+                    + keyword_density    × 0.25
+                    + section_label_bonus× 0.10
+    """
+    from rag_pipeline import search_lr_semantic
     try:
-        client = get_qdrant()
-        rid_set = set(r.strip() for r in report_ids.split(",") if r.strip()) if report_ids else set()
-        results_by_report: dict = {}
-        offset = None
-        while True:
-            results, next_offset = client.scroll(
-                collection_name=config.QDRANT_COLLECTION,
-                limit=500, offset=offset,
-                with_payload=True,
-            )
-            for point in results:
-                p = point.payload or {}
-                rid = p.get("report_id", "")
-                if rid_set and rid not in rid_set:
-                    continue
-                section = p.get("section_type", "")
-                if section not in ("lessons_learned", "recommendations"):
-                    continue
-                text = p.get("chunk_text", "").strip()
-                if not _is_genuine_section_chunk(text, section):
-                    continue
-                if rid not in results_by_report:
-                    results_by_report[rid] = {
-                        "report_id": rid,
-                        "title": p.get("title", ""),
-                        "year": p.get("year"),
-                        "country": p.get("country", ""),
-                        "region": p.get("region", ""),
-                        "thematic_category": p.get("thematic_category", ""),
-                        "lessons_learned": [],
-                        "recommendations": [],
-                    }
-                if section == "lessons_learned":
-                    results_by_report[rid]["lessons_learned"].append(text)
-                else:
-                    results_by_report[rid]["recommendations"].append(text)
-            if next_offset is None:
-                break
-            offset = next_offset
-        return {"reports": list(results_by_report.values())}
+        rid_list = [r.strip() for r in report_ids.split(",") if r.strip()] if report_ids else None
+
+        lessons_texts, lessons_meta = search_lr_semantic(
+            "lessons", report_ids=rid_list, top_per_template=15, top_final=6
+        )
+        recs_texts, recs_meta = search_lr_semantic(
+            "recommendations", report_ids=rid_list, top_per_template=15, top_final=6
+        )
+
+        all_rids = set(lessons_texts.keys()) | set(recs_texts.keys())
+        all_meta = {**lessons_meta, **recs_meta}
+
+        reports = []
+        for rid in all_rids:
+            meta = all_meta.get(rid, {
+                "report_id": rid, "title": "", "year": None,
+                "country": "", "region": "", "thematic_category": "",
+            })
+            reports.append({
+                **meta,
+                "lessons_learned": lessons_texts.get(rid, []),
+                "recommendations": recs_texts.get(rid, []),
+            })
+
+        return {"reports": reports}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
