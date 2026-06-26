@@ -353,6 +353,24 @@ def _lr_keyword_score(text: str, mode: str) -> float:
     hits = sum(1 for kw in keywords if kw in lower)
     return min(hits / 3.0, 1.0)
 
+# Cached pre-computed template vectors — populated once at startup
+_lr_vec_cache: dict = {}
+
+
+def get_lr_template_vectors() -> None:
+    """Batch-embed all HyDE templates once and cache the vectors.
+    Call at startup so L&R requests reuse cached vectors instead of
+    re-embedding (each embed call was taking 30-50s on Railway CPU)."""
+    global _lr_vec_cache
+    if _lr_vec_cache:
+        return
+    embed = get_embed_model()
+    lesson_vecs = embed.encode(_LESSON_HYDE_TEMPLATES, normalize_embeddings=True)
+    rec_vecs    = embed.encode(_REC_HYDE_TEMPLATES,    normalize_embeddings=True)
+    _lr_vec_cache["lessons"]         = [v.tolist() for v in lesson_vecs]
+    _lr_vec_cache["recommendations"] = [v.tolist() for v in rec_vecs]
+    logger.info("HyDE template vectors pre-computed and cached.")
+
 
 def search_lr_semantic(
     mode: str,                           # "lessons" or "recommendations"
@@ -379,10 +397,8 @@ def search_lr_semantic(
         texts_by_report_id: {rid: [chunk_text, ...]}
         meta_by_report_id:  {rid: {title, year, country, region, thematic_category, report_id}}
     """
-    embed = get_embed_model()
     client = get_qdrant()
 
-    templates = _LESSON_HYDE_TEMPLATES if mode == "lessons" else _REC_HYDE_TEMPLATES
     target_label = "lessons_learned" if mode == "lessons" else "recommendations"
 
     qdrant_filter: Optional[Filter] = None
@@ -391,11 +407,14 @@ def search_lr_semantic(
             must=[FieldCondition(key="report_id", match=MatchAny(any=report_ids))]
         )
 
+    # Use cached template vectors (pre-computed at startup)
+    get_lr_template_vectors()
+    template_vecs = _lr_vec_cache[mode]
+
     # Stage 1 — collect unique candidates (dedup by point id, keep best score)
     best_by_id: dict = {}  # point_id -> {text, report_id, section_type, sem_score, meta}
 
-    for template in templates:
-        vec = embed.encode(template, normalize_embeddings=True).tolist()
+    for vec in template_vecs:
         try:
             hits = client.search(
                 collection_name=config.QDRANT_COLLECTION,
