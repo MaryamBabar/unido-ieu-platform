@@ -30,9 +30,14 @@ app = FastAPI(title="UNIDO IEU Evaluation Intelligence Platform", version="1.0.0
 
 @app.on_event("startup")
 async def startup_event():
-    """Create Qdrant text index for hybrid search on first startup."""
+    """Create Qdrant text index and pre-warm HyDE template vectors on startup."""
     if not config.validate():  # only if credentials are present
         create_text_index()
+        # Pre-embed all HyDE templates in one batch so L&R requests are fast.
+        # Without this, each request would embed 10 templates individually
+        # at ~30-50s each on CPU = 5-8 minute response times.
+        from rag_pipeline import get_lr_template_vectors
+        get_lr_template_vectors()
 
 app.add_middleware(
     CORSMiddleware,
