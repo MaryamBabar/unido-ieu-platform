@@ -280,16 +280,25 @@ st.markdown("""
 # Session state
 # ─────────────────────────────────────────────────────────────────────────────
 
+import time as _time
+
 for k, v in {
     "session_token": "no-auth-bypass", "username": "guest",
     "display_name": "Guest", "role": "admin",
-    "all_reports": None,          # cached report list
-    "lessons_cache": {},          # report_id -> {lessons, recommendations}
-    "synth_history": [],          # synthesis chat history
+    "all_reports": None,
+    "lessons_cache": {},
+    "synth_history": [],
     "backend_healthy": None,
+    "_page_load": 0,
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# Reset report cache when app restarts (new deployment / new session)
+_deploy_ts = int(os.path.getmtime(__file__))
+if st.session_state.get("_deploy_ts") != _deploy_ts:
+    st.session_state["_deploy_ts"] = _deploy_ts
+    st.session_state["all_reports"] = None  # force refresh on new deploy
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API helpers
