@@ -301,9 +301,13 @@ st.markdown("""
   /* Tight button row: collapse inter-column gaps */
   div[data-testid="column"]:has(button.stButton),
   div[data-testid="column"]:has(div.stDownloadButton) {
-    padding-left: 3px !important;
-    padding-right: 3px !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
     min-width: 0 !important;
+  }
+  /* Collapse gap between button-row columns */
+  div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"] button.stButton) {
+    gap: 4px !important;
   }
 
   /* Card action buttons */
@@ -950,14 +954,14 @@ def _report_detail_modal():
 
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-        # Row 2: Type | Country | Rating
+        # Row 2: Type | Country | Overall Rating
         r2c1, r2c2, r2c3 = st.columns(3)
         with r2c1:
-            st.markdown(_info_card("Type", rtype.replace("Project Evaluation","Terminal") if rtype else "N/A"), unsafe_allow_html=True)
+            st.markdown(_info_card("Evaluation Type", rtype or "N/A"), unsafe_allow_html=True)
         with r2c2:
             st.markdown(_info_card("Country", country or "N/A"), unsafe_allow_html=True)
         with r2c3:
-            st.markdown(_info_card("Rating", rating_lbl), unsafe_allow_html=True)
+            st.markdown(_info_card("Overall Rating", rating_lbl), unsafe_allow_html=True)
 
     # ── Footer download ───────────────────────────────────────────────────────
     if sec_data and sec_data.get("sections"):
