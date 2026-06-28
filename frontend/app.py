@@ -1105,7 +1105,7 @@ def show_search_tab(filters: dict):
         """, unsafe_allow_html=True)
 
         # ── Action button row — compact, left-aligned ───────────────────────
-        btn_view, btn_ai, btn_export, _ = st.columns([3, 2, 2, 20])
+        btn_view, btn_ai, btn_export, _ = st.columns([2.5, 1.8, 1.8, 30], gap="small")
 
         with btn_view:
             if st.button("View Details ↗", key=f"view_{rid}"):
