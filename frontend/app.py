@@ -156,11 +156,11 @@ st.markdown("""
   /* Report cards */
   .report-card {
     background: white; border: 1px solid var(--border);
-    border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 0.7rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 0.6rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-left: 4px solid var(--blue);
   }
-  .report-title { font-weight: 600; color: var(--dark); font-size: 0.97rem; }
-  .report-meta  { color: var(--muted); font-size: 0.8rem; margin: 0.2rem 0 0.4rem; }
+  .report-title { font-weight: 700; color: var(--dark); font-size: 0.95rem; line-height:1.4; margin-bottom:0.2rem; }
+  .report-meta  { color: var(--muted); font-size: 0.78rem; margin: 0.15rem 0 0.4rem; }
   .tag {
     display: inline-block; border-radius: 999px; font-size: 0.72rem;
     font-weight: 600; padding: 0.15rem 0.55rem; margin: 2px;
@@ -169,6 +169,18 @@ st.markdown("""
   .tag-green { background: #dcfce7; color: #166534; }
   .tag-amber { background: #fef3c7; color: #92400e; }
   .tag-gray  { background: #f3f4f6; color: #374151; }
+  .tag-purple { background: #f3e8ff; color: #6d28d9; }
+
+  /* Rating badge */
+  .rating-pill {
+    display:inline-flex; align-items:center; gap:4px;
+    border-radius:999px; font-size:0.72rem; font-weight:700;
+    padding:0.18rem 0.6rem; margin:2px;
+  }
+  .rating-high   { background:#dcfce7; color:#166534; }
+  .rating-mid    { background:#fef3c7; color:#92400e; }
+  .rating-low    { background:#fee2e2; color:#991b1b; }
+  .rating-none   { background:#f3f4f6; color:#6b7280; }
 
   /* Passage cards */
   .passage-card {
@@ -257,18 +269,37 @@ def api(method: str, path: str, **kw) -> httpx.Response:
 
 def load_reports(force: bool = False):
     if st.session_state.all_reports is None or force:
-        try:
-            r = api("GET", "/api/v1/reports/list")
-            if r.status_code == 200:
-                st.session_state.all_reports = r.json().get("reports", [])
-            else:
-                st.session_state.all_reports = []
-        except Exception:
-            st.session_state.all_reports = []
+        reports = load_metadata_reports()
+        if not reports:
+            try:
+                r = api("GET", "/api/v1/reports/list")
+                if r.status_code == 200:
+                    reports = r.json().get("reports", [])
+            except Exception:
+                pass
+        st.session_state.all_reports = sorted(
+            reports, key=lambda r: r.get("year") or 0, reverse=True
+        )
 
 def load_lessons(report_ids: list[str]) -> list[dict]:
     try:
         r = api("GET", "/api/v1/lessons", params={"report_ids": ",".join(report_ids)})
+        return r.json().get("reports", []) if r.status_code == 200 else []
+    except Exception:
+        return []
+
+def load_sections(report_id: str) -> dict | None:
+    """Load pre-extracted PDF sections for a single report."""
+    try:
+        r = api("GET", f"/api/v1/reports/{report_id}/sections")
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+def load_metadata_reports() -> list[dict]:
+    """Load full metadata (incl. ratings) from metadata.yaml via backend."""
+    try:
+        r = api("GET", "/api/v1/metadata")
         return r.json().get("reports", []) if r.status_code == 200 else []
     except Exception:
         return []
@@ -510,6 +541,51 @@ def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
     return [result] if _is_quality_item(result) else []
 
 
+def make_excel_sections(reports_meta: list[dict], sections_by_id: dict) -> bytes:
+    """Multi-sheet Excel: one sheet per section, one row per report."""
+    META_COLS = ["Report ID", "Title", "Year", "Country", "Region",
+                 "Thematic Area", "Donor", "Evaluation Rating"]
+    SECTIONS = [
+        ("findings",        "Findings"),
+        ("results",         "Results"),
+        ("lessons_learned", "Lessons Learned"),
+        ("conclusions",     "Conclusions"),
+        ("recommendations", "Recommendations"),
+    ]
+
+    def _meta_row(rep):
+        rating = rep.get("evaluation_rating")
+        return {
+            "Report ID":        rep.get("report_id", ""),
+            "Title":            rep.get("title", ""),
+            "Year":             rep.get("year", ""),
+            "Country":          rep.get("country", ""),
+            "Region":           rep.get("region", ""),
+            "Thematic Area":    rep.get("thematic_category", ""),
+            "Donor":            rep.get("donor", ""),
+            "Evaluation Rating": f"{rating:.1f}/6" if rating else "",
+        }
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for sec_key, sec_label in SECTIONS:
+            rows = []
+            for rep in reports_meta:
+                rid = rep.get("report_id", "")
+                sec_data = sections_by_id.get(rid, {})
+                text = sec_data.get("sections", {}).get(sec_key, "") if sec_data else ""
+                row = _meta_row(rep)
+                row[sec_label] = text.strip() if text else ""
+                rows.append(row)
+            df = pd.DataFrame(rows, columns=META_COLS + [sec_label])
+            df.to_excel(writer, sheet_name=sec_label[:31], index=False)
+            ws = writer.sheets[sec_label[:31]]
+            for col in ws.columns:
+                max_len = max((len(str(c.value or "")) for c in col), default=0)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 60)
+    return buf.getvalue()
+
+
 def make_excel(reports_data: list[dict]) -> bytes:
     # Build Excel: one row per extracted lesson or recommendation item.
     rows_l, rows_r = [], []
@@ -592,6 +668,47 @@ def show_sdg_legend():
 # TAB 1 — Search & Browse
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _rating_badge(rating) -> str:
+    if rating is None:
+        return '<span class="rating-pill rating-none">Rating: N/A</span>'
+    try:
+        r = float(rating)
+    except (TypeError, ValueError):
+        return '<span class="rating-pill rating-none">Rating: N/A</span>'
+    cls = "rating-high" if r >= 4.5 else ("rating-mid" if r >= 3.0 else "rating-low")
+    return f'<span class="rating-pill {cls}">★ {r:.1f} / 6</span>'
+
+
+def _section_colors() -> dict:
+    return {
+        "findings":        ("#1d4ed8", "#eff6ff"),
+        "results":         ("#7c3aed", "#f5f3ff"),
+        "lessons_learned": ("#0369a1", "#e0f2fe"),
+        "conclusions":     ("#166534", "#f0fdf4"),
+        "recommendations": ("#9a3412", "#fff7ed"),
+    }
+
+
+def _render_section_block(label: str, text: str, color: str, bg: str):
+    if not text or not text.strip():
+        st.markdown(
+            f'<div style="color:#9ca3af;font-size:0.82rem;font-style:italic;padding:0.4rem 0;">' +
+            f'No {label.lower()} content extracted from this report.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    display_text = text.strip()
+    if len(display_text) > 3000:
+        display_text = display_text[:3000] + "\n\n[… truncated — download Excel for full text]"
+    st.markdown(
+        f'<div style="background:{bg};border-left:4px solid {color};' +
+        f'border-radius:0 8px 8px 0;padding:0.85rem 1rem;margin-top:0.3rem;">' +
+        f'<div style="font-size:0.84rem;color:#1e293b;line-height:1.7;white-space:pre-wrap;">' +
+        display_text + '</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def show_search_tab(filters: dict):
     load_reports()
     all_reps = st.session_state.all_reports or []
@@ -616,7 +733,7 @@ def show_search_tab(filters: dict):
         n_total = len(all_reps)
         n_shown = len(filtered)
         if n_total == 0:
-            st.info("No reports indexed yet. Add PDFs and run the ingestion script.")
+            st.info("No reports loaded yet. Check backend connection.")
         else:
             st.markdown(f"**{n_shown}** of **{n_total}** reports")
     with col_refresh:
@@ -625,105 +742,102 @@ def show_search_tab(filters: dict):
             st.rerun()
     with col_export:
         if filtered:
-            if st.button("📥 Export to Excel", type="primary", use_container_width=True):
-                with st.spinner("Fetching lessons & recommendations…"):
+            if st.button("📥 Export All to Excel", type="primary", use_container_width=True):
+                with st.spinner("Building synthesis report…"):
                     rid_list = [r["report_id"] for r in filtered]
-                    lessons_data = load_lessons(rid_list)
-                if lessons_data:
-                    excel_bytes = make_excel(lessons_data)
+                    sections_by_id = {}
+                    for rid in rid_list:
+                        sec = load_sections(rid)
+                        if sec:
+                            sections_by_id[rid] = sec
+                if sections_by_id:
+                    excel_bytes = make_excel_sections(filtered, sections_by_id)
                     st.download_button(
-                        label="⬇ Download Excel",
+                        label="⬇ Download Synthesis Report",
                         data=excel_bytes,
-                        file_name="UNIDO_Lessons_Recommendations.xlsx",
+                        file_name="UNIDO_Evaluation_Synthesis.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
                 else:
-                    st.warning("No lessons or recommendations found for the selected reports.")
+                    st.warning("No extracted sections found.")
 
     if not filtered:
         return
 
+    colors = _section_colors()
+
     # ── Report cards ─────────────────────────────────────────────────────────
     for rep in filtered:
-        title    = rep.get("title", "Unknown")
+        title    = rep.get("title") or rep.get("short_title") or "Untitled Report"
         year     = rep.get("year", "")
         country  = rep.get("country", "")
         region   = rep.get("region", "")
         thematic = rep.get("thematic_category", "")
-        etype    = rep.get("evaluation_type", "")
+        rtype    = rep.get("report_type", "")
         donor    = rep.get("donor", "")
         sdgs     = rep.get("sdgs") or []
         rid      = rep.get("report_id", "")
+        rating   = rep.get("evaluation_rating")
+        budget   = rep.get("budget_usd")
 
-        badges_html = sdg_badges_row(sdgs, 28)
+        badges_html    = sdg_badges_row(sdgs, 26)
+        rating_html    = _rating_badge(rating)
         thematic_badge = f'<span class="tag tag-blue">{thematic}</span>' if thematic else ""
-        etype_badge    = f'<span class="tag tag-gray">{etype}</span>'    if etype    else ""
-        donor_badge    = f'<span class="tag tag-green">{donor}</span>'    if donor    else ""
+        rtype_badge    = f'<span class="tag tag-gray">{rtype.title()}</span>' if rtype else ""
+        donor_badge    = f'<span class="tag tag-green">{donor}</span>' if donor else ""
+        budget_str     = (f'<span class="tag tag-purple">USD {budget/1e6:.1f}M</span>'
+                         if budget and budget >= 1e5 else "")
+
+        meta_parts = [str(year)] if year else []
+        if country: meta_parts.append(country)
+        if region and region != country: meta_parts.append(region)
+        meta_line = " · ".join(meta_parts)
 
         st.markdown(f"""
         <div class="report-card">
           <div class="report-title">{title}</div>
-          <div class="report-meta">
-            {year} &nbsp;·&nbsp; {country}
-            {"&nbsp;·&nbsp; " + region if region else ""}
-          </div>
-          <div style="margin:0.3rem 0;">
-            {thematic_badge}{etype_badge}{donor_badge}
+          <div class="report-meta">{meta_line}</div>
+          <div style="margin:0.35rem 0 0.2rem;">
+            {rating_html}{thematic_badge}{rtype_badge}{donor_badge}{budget_str}
           </div>
           <div style="margin-top:0.4rem;">{badges_html}</div>
         </div>
         """, unsafe_allow_html=True)
 
-        with st.expander("📋 Lessons Learned & Recommendations"):
-            with st.spinner("Loading…"):
-                data = load_lessons([rid])
-            if data:
-                rep_data = data[0]
-                col_l, col_r = st.columns(2)
+        with st.expander("📋 Evaluation Synthesis Unit — Findings · Conclusions · Lessons · Recommendations"):
+            with st.spinner("Loading sections…"):
+                sec_data = load_sections(rid)
 
-                with col_l:
-                    st.markdown("**Lessons Learned**")
-                    raw_lessons = rep_data.get("lessons_learned", [])
-                    # Parse each chunk into individual items
-                    parsed_lessons = []
-                    for chunk in raw_lessons:
-                        parsed_lessons.extend(extract_items(chunk))
-                    if parsed_lessons:
-                        for i, item in enumerate(parsed_lessons, 1):
-                            st.markdown(
-                                f'<div style="background:#f0f9ff;border-left:3px solid #009EDB;'
-                                f'padding:0.55rem 0.8rem;margin-bottom:0.45rem;border-radius:0 6px 6px 0;'
-                                f'font-size:0.87rem;color:#1a1a2e;line-height:1.55;">'
-                                f'<span style="font-weight:700;color:#009EDB;margin-right:6px;">{i}.</span>'
-                                f'{item}</div>',
-                                unsafe_allow_html=True,
-                            )
-                    else:
-                        st.caption("No lessons extracted from this report.")
+            if sec_data and sec_data.get("sections"):
+                sections = sec_data["sections"]
 
-                with col_r:
-                    st.markdown("**Recommendations**")
-                    raw_recs = rep_data.get("recommendations", [])
-                    parsed_recs = []
-                    for chunk in raw_recs:
-                        parsed_recs.extend(extract_items(chunk))
-                    if parsed_recs:
-                        for i, item in enumerate(parsed_recs, 1):
-                            st.markdown(
-                                f'<div style="background:#f0fdf4;border-left:3px solid #22c55e;'
-                                f'padding:0.55rem 0.8rem;margin-bottom:0.45rem;border-radius:0 6px 6px 0;'
-                                f'font-size:0.87rem;color:#1a1a2e;line-height:1.55;">'
-                                f'<span style="font-weight:700;color:#16a34a;margin-right:6px;">{i}.</span>'
-                                f'{item}</div>',
-                                unsafe_allow_html=True,
-                            )
-                    else:
-                        st.caption("No recommendations extracted from this report.")
+                per_rep_excel = make_excel_sections([rep], {rid: sec_data})
+                st.download_button(
+                    label="⬇ Download this report as Excel",
+                    data=per_rep_excel,
+                    file_name=f"UNIDO_{rid}_Synthesis.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_{rid}",
+                )
+
+                SECTION_ORDER = [
+                    ("findings",        "🔍 Findings"),
+                    ("results",         "📊 Results"),
+                    ("lessons_learned", "💡 Lessons Learned"),
+                    ("conclusions",     "✅ Conclusions"),
+                    ("recommendations", "📌 Recommendations"),
+                ]
+
+                tabs = st.tabs([label for _, label in SECTION_ORDER])
+                for (sec_key, sec_label), tab in zip(SECTION_ORDER, tabs):
+                    with tab:
+                        c, bg = colors[sec_key]
+                        _render_section_block(sec_label, sections.get(sec_key, ""), c, bg)
             else:
-                st.caption("No structured data found for this report yet.")
+                st.caption("Sections not yet extracted for this report.")
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # TAB 2 — Synthesis (RAG — passages only, no LLM)
 # ─────────────────────────────────────────────────────────────────────────────
 

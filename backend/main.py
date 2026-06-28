@@ -436,6 +436,55 @@ async def get_dac_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@app.get("/api/v1/metadata")
+async def get_metadata(session: dict = Depends(require_auth)):
+    """Return full metadata for all reports from metadata.yaml (includes ratings, budget)."""
+    import os, yaml
+    meta_path = os.path.join(os.path.dirname(__file__), "..", "data", "metadata.yaml")
+    if not os.path.exists(meta_path):
+        raise HTTPException(status_code=404, detail="metadata.yaml not found.")
+    with open(meta_path, encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    reports = raw.get("reports", raw) if isinstance(raw, dict) else raw
+    return {"reports": reports, "total": len(reports)}
+
+
+@app.get("/api/v1/reports/{report_id}/sections")
+async def get_report_sections(report_id: str, session: dict = Depends(require_auth)):
+    """Return pre-extracted PDF sections for a single report (no Qdrant call)."""
+    import os
+    sections_dir = os.path.join(os.path.dirname(__file__), "..", "data", "extracted_sections")
+    sections_path = os.path.join(sections_dir, f"{report_id}.json")
+    if not os.path.exists(sections_path):
+        raise HTTPException(status_code=404, detail=f"Sections not found for report '{report_id}'.")
+    with open(sections_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.get("/api/v1/sections")
+async def get_bulk_sections(
+    report_ids: str = Query(default=""),
+    session: dict = Depends(require_auth),
+):
+    """Return sections for multiple reports. report_ids: comma-separated. Empty = all."""
+    import os, glob
+    sections_dir = os.path.join(os.path.dirname(__file__), "..", "data", "extracted_sections")
+    rid_list = [r.strip() for r in report_ids.split(",") if r.strip()] if report_ids else []
+    results = []
+    if rid_list:
+        for rid in rid_list:
+            path = os.path.join(sections_dir, f"{rid}.json")
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    results.append(json.load(f))
+    else:
+        for path in sorted(glob.glob(os.path.join(sections_dir, "*.json"))):
+            with open(path, encoding="utf-8") as f:
+                results.append(json.load(f))
+    return {"reports": results, "total": len(results)}
+
+
 @app.get("/")
 async def root():
     return {"service": "UNIDO IEU RAG Platform", "version": "1.0.0", "docs": "/docs"}
@@ -444,7 +493,6 @@ async def root():
 if __name__ == "__main__":
     import uvicorn
     import os
-    # Use 0.0.0.0 on Railway/Render (PORT env var set by platform), 127.0.0.1 locally
     host = "0.0.0.0" if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RENDER") else "127.0.0.1"
     port = int(os.getenv("PORT", config.API_PORT))
     uvicorn.run("main:app", host=host, port=port, reload=False)
