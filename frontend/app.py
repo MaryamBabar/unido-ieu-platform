@@ -237,6 +237,30 @@ st.markdown("""
     border-color: var(--blue) !important;
   }
   .stButton > button { border-radius: 6px; }
+
+  /* Card action buttons */
+  .card-actions {
+    display: flex; gap: 8px; margin-top: 0.5rem; margin-bottom: 0.2rem;
+  }
+  .action-btn {
+    flex: 1; padding: 0.38rem 0.7rem; border-radius: 6px; font-size: 0.78rem;
+    font-weight: 600; cursor: pointer; border: none; text-align: center;
+    font-family: inherit;
+  }
+  .action-btn-outline {
+    background: white; color: var(--dark); border: 1.5px solid var(--border);
+  }
+  .action-btn-outline:hover { border-color: var(--blue); color: var(--blue); }
+  .action-btn-primary { background: var(--blue); color: white; }
+  .action-btn-primary:hover { background: #007ab8; }
+  .action-btn-ghost  { background: #f3f4f6; color: var(--dark); border: 1.5px solid transparent; }
+  .action-btn-ghost:hover { background: #e5e7eb; }
+
+  /* Pilot banner */
+  .pilot-banner {
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+    padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.82rem; color: #1e40af;
+  }
 </style>
 """, unsafe_allow_html=True)
 
@@ -269,16 +293,34 @@ def api(method: str, path: str, **kw) -> httpx.Response:
 
 def load_reports(force: bool = False):
     if st.session_state.all_reports is None or force:
-        reports = load_metadata_reports()
-        if not reports:
-            try:
-                r = api("GET", "/api/v1/reports/list")
-                if r.status_code == 200:
-                    reports = r.json().get("reports", [])
-            except Exception:
-                pass
+        # Pull from both sources and merge:
+        # metadata.yaml → ratings, full titles, donor, budget
+        # Qdrant list   → SDGs (not stored in metadata.yaml)
+        meta_reports = load_metadata_reports()
+        qdrant_reports: list[dict] = []
+        try:
+            r = api("GET", "/api/v1/reports/list")
+            if r.status_code == 200:
+                qdrant_reports = r.json().get("reports", [])
+        except Exception:
+            pass
+
+        # Build SDG lookup from Qdrant
+        sdg_by_rid = {r["report_id"]: r.get("sdgs") or [] for r in qdrant_reports}
+
+        if meta_reports:
+            # Use metadata.yaml as base; patch SDGs from Qdrant
+            merged = []
+            for rep in meta_reports:
+                rid = rep.get("report_id", "")
+                rep["sdgs"] = sdg_by_rid.get(rid) or rep.get("sdgs") or []
+                merged.append(rep)
+        else:
+            # Fall back to Qdrant only
+            merged = qdrant_reports
+
         st.session_state.all_reports = sorted(
-            reports, key=lambda r: r.get("year") or 0, reverse=True
+            merged, key=lambda r: r.get("year") or 0, reverse=True
         )
 
 def load_lessons(report_ids: list[str]) -> list[dict]:
@@ -665,6 +707,156 @@ def show_sdg_legend():
     )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Report Detail Modal
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.dialog("Evaluation Report", width="large")
+def _report_detail_modal():
+    """Professional modal matching the EIO platform design."""
+    rep      = st.session_state.get("modal_rep", {})
+    sec_data = st.session_state.get("modal_sec", {})
+
+    title    = rep.get("title", "Untitled Report")
+    year     = rep.get("year", "")
+    country  = rep.get("country", "")
+    region   = rep.get("region", "")
+    thematic = rep.get("thematic_category", "")
+    rating   = rep.get("evaluation_rating")
+    donor    = rep.get("donor", "")
+    budget   = rep.get("budget_usd")
+    rtype    = rep.get("report_type", "Terminal Evaluation")
+    sdgs     = rep.get("sdgs") or []
+    rid      = rep.get("report_id", "")
+
+    # Format fields
+    rating_str = f"★ {float(rating):.1f} / 6" if rating else "N/A"
+    budget_str = f"USD {budget/1e6:.1f}M" if budget and budget >= 1e5 else ""
+    meta_items = [p for p in [country, rating_str, budget_str, donor] if p]
+    meta_line  = " &nbsp;·&nbsp; ".join(
+        [f"📍 {country}" if country else "",
+         f"★ {float(rating):.1f}/6" if rating else "",
+         budget_str,
+         donor]
+    )
+    meta_line = " &nbsp;·&nbsp; ".join(p for p in [
+        f"📍 {country}" if country else "",
+        f"★ {float(rating):.1f}/6" if rating else "",
+        budget_str,
+        donor,
+    ] if p)
+
+    # ── Dark-blue header ──────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="background:#003da5;color:white;
+                margin:-1rem -1rem 0 -1rem;padding:1.2rem 1.6rem 1rem;">
+      <div style="font-size:0.72rem;opacity:0.75;letter-spacing:0.06em;
+                  text-transform:uppercase;margin-bottom:0.4rem;">
+        {rtype} &nbsp;·&nbsp; {year} &nbsp;·&nbsp; {region}
+      </div>
+      <div style="font-size:1.15rem;font-weight:700;line-height:1.35;">{title}</div>
+      <div style="margin-top:0.55rem;font-size:0.82rem;opacity:0.88;">{meta_line}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    sections = sec_data.get("sections", {}) if sec_data else {}
+    colors   = _section_colors()
+
+    t_ov, t_ll, t_rec, t_sdg, t_ctx = st.tabs(
+        ["📋 Overview", "💡 Lessons Learned", "📌 Recommendations", "🌐 SDG Mapping", "📁 Context"]
+    )
+
+    with t_ov:
+        st.markdown("#### AI Executive Summary")
+        summary = rep.get("executive_summary") or sections.get("findings", "")
+        if summary:
+            st.markdown(
+                f'<div style="background:#f8faff;border-left:4px solid #003da5;'
+                f'border-radius:0 8px 8px 0;padding:0.9rem 1.1rem;'
+                f'font-size:0.88rem;line-height:1.7;color:#1e293b;">'
+                f'{summary[:1800]}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("Executive summary not available for this report.")
+
+        st.markdown("#### Classification")
+        if sdgs:
+            st.markdown(sdg_badges_row(sdgs, 38), unsafe_allow_html=True)
+        tag_line = ""
+        if thematic:
+            tag_line += f'<span class="tag tag-blue">◈ {thematic}</span> '
+        if rating:
+            try:
+                r = float(rating)
+                cls = "tag-green" if r >= 4.5 else ("tag-amber" if r >= 3.0 else "tag-red")
+                label = "Satisfactory" if r >= 4.0 else ("Moderately Satisfactory" if r >= 3.0 else "Unsatisfactory")
+                tag_line += f'<span class="tag {cls}">◈ {label}</span> '
+            except Exception:
+                pass
+        if tag_line:
+            st.markdown(tag_line, unsafe_allow_html=True)
+
+    with t_ll:
+        c, bg = colors["lessons_learned"]
+        _render_section_block("Lessons Learned", sections.get("lessons_learned", ""), c, bg)
+
+    with t_rec:
+        c, bg = colors["recommendations"]
+        _render_section_block("Recommendations", sections.get("recommendations", ""), c, bg)
+
+    with t_sdg:
+        if sdgs:
+            cols = st.columns(2)
+            for i, n in enumerate(sorted(sdgs)):
+                with cols[i % 2]:
+                    badge = sdg_badge_html(n, 40)
+                    st.markdown(
+                        f'<div style="display:flex;align-items:center;gap:10px;'
+                        f'margin-bottom:0.6rem;">'
+                        f'{badge}'
+                        f'<div><strong>SDG {n}</strong><br>'
+                        f'<span style="font-size:0.8rem;color:#6b7280;">{SDG_NAMES.get(n,"")}</span>'
+                        f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.caption("SDG mapping not available for this report.")
+
+    with t_ctx:
+        def _row(label, value):
+            if value:
+                st.markdown(
+                    f'<div style="display:flex;gap:1rem;padding:0.45rem 0;'
+                    f'border-bottom:1px solid #f3f4f6;font-size:0.86rem;">'
+                    f'<span style="color:#6b7280;min-width:130px;">{label}</span>'
+                    f'<span style="color:#1e293b;font-weight:600;">{value}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+        _row("Country",        country)
+        _row("Region",         region)
+        _row("Thematic Area",  thematic)
+        _row("Evaluation Type", rtype)
+        _row("Year",           str(year))
+        _row("Donor",          donor)
+        _row("Budget",         budget_str)
+        _row("Report ID",      rid)
+
+    # ── Footer download ───────────────────────────────────────────────────────
+    if sec_data and sec_data.get("sections"):
+        st.divider()
+        xl = make_excel_sections([rep], {rid: sec_data})
+        st.download_button(
+            "⬇ Download Full Report as Excel",
+            data=xl,
+            file_name=f"UNIDO_{rid}_Evaluation.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TAB 1 — Search & Browse
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -713,54 +905,38 @@ def show_search_tab(filters: dict):
     load_reports()
     all_reps = st.session_state.all_reports or []
 
-    # ── Apply filters ────────────────────────────────────────────────────────
+    # ── PILOT PHASE: 2021 reports only ───────────────────────────────────────
+    all_reps = [r for r in all_reps if r.get("year") == 2021]
+
+    st.markdown(
+        '<div class="pilot-banner">📌 <strong>Pilot phase</strong> — '
+        'Showing 4 evaluation reports from 2021. Sections verified and ready for review.</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Apply sidebar filters ────────────────────────────────────────────────
     filtered = all_reps
     if filters["thematic"]:
         filtered = [r for r in filtered if r.get("thematic_category") in filters["thematic"]]
     if filters["sdgs"]:
         filtered = [r for r in filtered
                     if any(s in (r.get("sdgs") or []) for s in filters["sdgs"])]
-    if filters.get("years"):
-        filtered = [r for r in filtered if r.get("year") in filters["years"]]
     if filters["eval_type"]:
         filtered = [r for r in filtered if r.get("evaluation_type") in filters["eval_type"]]
     if filters["region"]:
         filtered = [r for r in filtered if r.get("region") in filters["region"]]
 
     # ── Controls row ─────────────────────────────────────────────────────────
-    col_count, col_refresh, col_export = st.columns([3, 1, 1])
+    col_count, col_refresh = st.columns([5, 1])
     with col_count:
-        n_total = len(all_reps)
-        n_shown = len(filtered)
-        if n_total == 0:
+        if len(all_reps) == 0:
             st.info("No reports loaded yet. Check backend connection.")
         else:
-            st.markdown(f"**{n_shown}** of **{n_total}** reports")
+            st.markdown(f"**{len(filtered)}** of **{len(all_reps)}** reports")
     with col_refresh:
-        if st.button("🔄 Refresh", use_container_width=True):
+        if st.button("🔄", use_container_width=True, help="Refresh report list"):
             load_reports(force=True)
             st.rerun()
-    with col_export:
-        if filtered:
-            if st.button("📥 Export All to Excel", type="primary", use_container_width=True):
-                with st.spinner("Building synthesis report…"):
-                    rid_list = [r["report_id"] for r in filtered]
-                    sections_by_id = {}
-                    for rid in rid_list:
-                        sec = load_sections(rid)
-                        if sec:
-                            sections_by_id[rid] = sec
-                if sections_by_id:
-                    excel_bytes = make_excel_sections(filtered, sections_by_id)
-                    st.download_button(
-                        label="⬇ Download Synthesis Report",
-                        data=excel_bytes,
-                        file_name="UNIDO_Evaluation_Synthesis.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
-                else:
-                    st.warning("No extracted sections found.")
 
     if not filtered:
         return
@@ -805,37 +981,45 @@ def show_search_tab(filters: dict):
         </div>
         """, unsafe_allow_html=True)
 
-        with st.expander("📋 Evaluation Synthesis Unit — Findings · Conclusions · Lessons · Recommendations"):
-            with st.spinner("Loading sections…"):
-                sec_data = load_sections(rid)
+        # ── Action button row ────────────────────────────────────────────────
+        btn_view, btn_ai, btn_export = st.columns(3)
 
-            if sec_data and sec_data.get("sections"):
-                sections = sec_data["sections"]
+        with btn_view:
+            if st.button("View Details ↗", key=f"view_{rid}", use_container_width=True):
+                with st.spinner("Loading…"):
+                    sec_data = load_sections(rid)
+                st.session_state["modal_rep"] = rep
+                st.session_state["modal_sec"] = sec_data
+                _report_detail_modal()
 
-                per_rep_excel = make_excel_sections([rep], {rid: sec_data})
+        with btn_ai:
+            if st.button("Ask AI", key=f"askai_{rid}", use_container_width=True, type="primary"):
+                st.session_state["synth_sel"] = [rid]
+                st.session_state["synth_goto"] = True
+                st.rerun()
+
+        with btn_export:
+            exp_key = f"export_bytes_{rid}"
+            if not st.session_state.get(exp_key):
+                if st.button("Export ⬇", key=f"exp_{rid}", use_container_width=True):
+                    with st.spinner("Preparing Excel…"):
+                        sec_e = load_sections(rid)
+                    st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
+                    st.rerun()
+            else:
                 st.download_button(
-                    label="⬇ Download this report as Excel",
-                    data=per_rep_excel,
-                    file_name=f"UNIDO_{rid}_Synthesis.xlsx",
+                    label="⬇ Download Excel",
+                    data=st.session_state[exp_key],
+                    file_name=f"UNIDO_{rid}_Evaluation.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"dl_{rid}",
+                    use_container_width=True,
                 )
 
-                SECTION_ORDER = [
-                    ("findings",        "🔍 Findings"),
-                    ("results",         "📊 Results"),
-                    ("lessons_learned", "💡 Lessons Learned"),
-                    ("conclusions",     "✅ Conclusions"),
-                    ("recommendations", "📌 Recommendations"),
-                ]
-
-                tabs = st.tabs([label for _, label in SECTION_ORDER])
-                for (sec_key, sec_label), tab in zip(SECTION_ORDER, tabs):
-                    with tab:
-                        c, bg = colors[sec_key]
-                        _render_section_block(sec_label, sections.get(sec_key, ""), c, bg)
-            else:
-                st.caption("Sections not yet extracted for this report.")
+        st.markdown(
+            "<div style='border-top:1px solid #f0f0f0;margin:0.6rem 0 0.8rem;'></div>",
+            unsafe_allow_html=True,
+        )
 
 
 # TAB 2 — Synthesis (RAG — passages only, no LLM)
@@ -1644,11 +1828,29 @@ def show_main_app():
                     st.caption(f"{h['document_count']:,} chunks indexed")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_names = ["Search & Browse", "🤝 Synthesis", "📊 Visualize", "🎯 OECD-DAC"]
+    tab_names = ["🔍 Search & Browse", "🤝 Synthesis", "📊 Visualize", "🎯 OECD-DAC"]
     if is_admin:
         tab_names.append("⚙️ Admin")
 
     tabs = st.tabs(tab_names)
+
+    # ── Ask AI redirect: pre-select report and jump to Synthesis tab ──────────
+    if st.session_state.pop("synth_goto", False):
+        import streamlit.components.v1 as components
+        components.html(
+            """
+            <script>
+              setTimeout(function() {
+                var tabBtns = window.parent.document.querySelectorAll(
+                  '[data-testid="stTabs"] button[role="tab"]'
+                );
+                if (tabBtns && tabBtns.length > 1) { tabBtns[1].click(); }
+              }, 180);
+            </script>
+            """,
+            height=0,
+            scrolling=False,
+        )
 
     with tabs[0]:
         show_search_tab(filters)
