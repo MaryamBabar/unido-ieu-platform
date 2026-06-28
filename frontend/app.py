@@ -236,7 +236,19 @@ st.markdown("""
     background-color: var(--blue) !important;
     border-color: var(--blue) !important;
   }
-  .stButton > button { border-radius: 6px; }
+  .stButton > button {
+    border-radius: 6px;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.85rem;
+  }
+
+  /* Tight button row: collapse inter-column gaps */
+  div[data-testid="column"]:has(button.stButton),
+  div[data-testid="column"]:has(div.stDownloadButton) {
+    padding-left: 3px !important;
+    padding-right: 3px !important;
+    min-width: 0 !important;
+  }
 
   /* Card action buttons */
   .card-actions {
