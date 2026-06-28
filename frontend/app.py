@@ -824,24 +824,58 @@ def _report_detail_modal():
             st.caption("SDG mapping not available for this report.")
 
     with t_ctx:
-        def _row(label, value):
-            if value:
-                st.markdown(
-                    f'<div style="display:flex;gap:1rem;padding:0.45rem 0;'
-                    f'border-bottom:1px solid #f3f4f6;font-size:0.86rem;">'
-                    f'<span style="color:#6b7280;min-width:130px;">{label}</span>'
-                    f'<span style="color:#1e293b;font-weight:600;">{value}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        _row("Country",        country)
-        _row("Region",         region)
-        _row("Thematic Area",  thematic)
-        _row("Evaluation Type", rtype)
-        _row("Year",           str(year))
-        _row("Donor",          donor)
-        _row("Budget",         budget_str)
-        _row("Report ID",      rid)
+        # Funding description line
+        funding_parts = []
+        if donor:
+            funding_parts.append(f"Funded by <strong>{donor}</strong>.")
+        if country:
+            funding_parts.append(f"Implemented in {country}.")
+        funding_text = " ".join(funding_parts)
+        if funding_text:
+            st.markdown(
+                f'<div style="font-size:0.86rem;color:#374151;margin-bottom:1.2rem;'
+                f'padding:0.6rem 0;border-bottom:1px solid #f3f4f6;">{funding_text}</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Grid of info cards — 2 rows × 3 columns
+        rating_lbl = "N/A"
+        if rating:
+            try:
+                r_val = float(rating)
+                if r_val >= 4.5:    rating_lbl = "Highly Satisfactory"
+                elif r_val >= 4.0:  rating_lbl = "Satisfactory"
+                elif r_val >= 3.0:  rating_lbl = "Moderately Satisfactory"
+                else:               rating_lbl = "Unsatisfactory"
+            except Exception:
+                pass
+
+        cards = [
+            ("BUDGET",   budget_str or "N/A"),
+            ("DURATION", rep.get("duration", "N/A")),
+            ("YEAR",     str(year) if year else "N/A"),
+            ("TYPE",     rtype.replace("Project Evaluation","Terminal") if rtype else "N/A"),
+            ("COUNTRY",  country or "N/A"),
+            ("RATING",   rating_lbl),
+        ]
+
+        def _info_card(label, value):
+            return (
+                f'<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;'
+                f'padding:0.7rem 0.9rem;">' 
+                f'<div style="font-size:0.65rem;font-weight:700;color:#9ca3af;'
+                f'letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.3rem;">{label}</div>'
+                f'<div style="font-size:0.92rem;font-weight:700;color:#111827;">{value}</div>'
+                f'</div>'
+            )
+
+        rows = [cards[:3], cards[3:]]
+        for row in rows:
+            cols = st.columns(3)
+            for col, (lbl, val) in zip(cols, row):
+                with col:
+                    st.markdown(_info_card(lbl, val), unsafe_allow_html=True)
+            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
     # ── Footer download ───────────────────────────────────────────────────────
     if sec_data and sec_data.get("sections"):
@@ -905,8 +939,11 @@ def show_search_tab(filters: dict):
     load_reports()
     all_reps = st.session_state.all_reports or []
 
-    # ── PILOT PHASE: 2021 reports only ───────────────────────────────────────
-    all_reps = [r for r in all_reps if r.get("year") == 2021]
+    # ── PILOT PHASE: 4 verified 2021 reports ────────────────────────────────
+    PILOT_IDS = {"UNIDO-100043", "UNIDO-100321", "UNIDO-104112", "UNIDO-120323"}
+    all_reps = [r for r in all_reps if r.get("report_id") in PILOT_IDS]
+    # Sort by report_id for consistent order
+    all_reps = sorted(all_reps, key=lambda r: r.get("report_id", ""))
 
     st.markdown(
         '<div class="pilot-banner">📌 <strong>Pilot phase</strong> — '
@@ -981,11 +1018,11 @@ def show_search_tab(filters: dict):
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Action button row ────────────────────────────────────────────────
-        btn_view, btn_ai, btn_export = st.columns(3)
+        # ── Action button row — compact, left-aligned ───────────────────────
+        btn_view, btn_ai, btn_export, _ = st.columns([1.4, 1.1, 1.1, 5])
 
         with btn_view:
-            if st.button("View Details ↗", key=f"view_{rid}", use_container_width=True):
+            if st.button("View Details ↗", key=f"view_{rid}"):
                 with st.spinner("Loading…"):
                     sec_data = load_sections(rid)
                 st.session_state["modal_rep"] = rep
@@ -993,7 +1030,7 @@ def show_search_tab(filters: dict):
                 _report_detail_modal()
 
         with btn_ai:
-            if st.button("Ask AI", key=f"askai_{rid}", use_container_width=True, type="primary"):
+            if st.button("Ask AI", key=f"askai_{rid}", type="primary"):
                 st.session_state["synth_sel"] = [rid]
                 st.session_state["synth_goto"] = True
                 st.rerun()
@@ -1001,19 +1038,18 @@ def show_search_tab(filters: dict):
         with btn_export:
             exp_key = f"export_bytes_{rid}"
             if not st.session_state.get(exp_key):
-                if st.button("Export ⬇", key=f"exp_{rid}", use_container_width=True):
+                if st.button("Export", key=f"exp_{rid}"):
                     with st.spinner("Preparing Excel…"):
                         sec_e = load_sections(rid)
                     st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
                     st.rerun()
             else:
                 st.download_button(
-                    label="⬇ Download Excel",
+                    label="⬇ Download",
                     data=st.session_state[exp_key],
                     file_name=f"UNIDO_{rid}_Evaluation.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"dl_{rid}",
-                    use_container_width=True,
                 )
 
         st.markdown(

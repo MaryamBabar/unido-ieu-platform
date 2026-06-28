@@ -1,24 +1,24 @@
 reports:
 - report_id: UNIDO-100043
   filename: 2021/GFSRL-100043_TE_Report_2020_E.pdf.pdf
-  title: Independent Terminal Evaluation of the Project Bamboo Processing for Sri
-    Lanka
+  title: 'Independent Terminal Evaluation: "Bamboo Processing for Sri Lanka"'
   short_title: Bamboo Processing Sri Lanka
   year: 2021
   country: Sri Lanka
   region: Asia and the Pacific
-  thematic_category: Climate Action / Mitigation
-  report_type: terminal
+  thematic_category: Agro-Industry & Food Systems
+  report_type: Project Evaluation
   donor: GEF
   budget_usd: 23652000
   evaluation_rating: 2.0
   overall_rating_label: Unsatisfactory
-  sdgs: []
+  sdgs:
+  - 8
+  - 12
+  - 15
 - report_id: UNIDO-100288
-  filename: 2023/Evaluation report on Stimulating industrial competitiveness through
-    biomass-based, grid connected electricity generation in the Domini.pdf
-  title: Stimulating industrial competitiveness through biomass-based grid-connected
-    electricity generation
+  filename: 2023/Evaluation report on Stimulating industrial competitiveness through biomass-based, grid connected electricity generation in the Domini.pdf
+  title: Stimulating industrial competitiveness through biomass-based grid-connected electricity generation
   short_title: Biomass Energy DR
   year: 2021
   country: Dominican Republic
@@ -32,36 +32,42 @@ reports:
   sdgs: []
 - report_id: UNIDO-100321
   filename: 2021/EvalRep_AZE-100321_HCFC_Phase_out_TE-2021.pdf
-  title: Initiation of the HCFC Phase Out in the Republic of Azerbaijan
+  title: 'Independent Terminal Evaluation: Initiation of the HCFC Phase Out in the Republic of Azerbaijan'
   short_title: Azerbaijan HCFC Phase-out
   year: 2021
   country: Azerbaijan
   region: Europe and Central Asia
   thematic_category: Chemicals & POPs
-  report_type: terminal
+  report_type: Project Evaluation
   donor: GEF
   budget_usd: 9170000
   evaluation_rating: 5.0
   overall_rating_label: Satisfactory
-  sdgs: []
+  sdgs:
+  - 12
+  - 13
+  - 17
 - report_id: UNIDO-104112
   filename: 2021/EvalRep_UKR-104112_RECP_TE-2020.pdf
-  title: Promoting the Adaptation and Adoption of RECP through the Establishment and
-    Operation of a Cleaner Production Centre in Ukraine
+  title: 'Independent Terminal Evaluation: Promoting the Adaptation and Adoption of RECP (Resource Efficient and Cleaner Production) Through the Establishment and Operation of a Cleaner Production Centre
+    (CPC) in Ukraine'
   short_title: Ukraine RECP Centre
   year: 2021
   country: Ukraine
   region: Europe and Central Asia
-  thematic_category: Circular Economy
-  report_type: terminal
+  thematic_category: Circular Economy / Waste Management
+  report_type: Project Evaluation
   donor: Switzerland (SECO), Austria
   budget_usd: 5181779
   evaluation_rating: 5.0
   overall_rating_label: Satisfactory
-  sdgs: []
+  sdgs:
+  - 9
+  - 12
+  - 13
+  - 17
 - report_id: UNIDO-100260
-  filename: 2022/Evaluation report on Mini-grid based renewable energy (biomass) sources
-    to augment rural electrification in Nigeria (2022).pdf
+  filename: 2022/Evaluation report on Mini-grid based renewable energy (biomass) sources to augment rural electrification in Nigeria (2022).pdf
   title: Mini-Grid Based Renewable Energy (Biomass) Sources to Augment Rural Electrification
   short_title: Biomass Mini-Grid Nigeria
   year: 2022
@@ -75,10 +81,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-120335
-  filename: 2023/Evaluation report on Promoting integrated biomass and small hydro
-    solutions for productive uses in Cameroon.pdf
-  title: Promoting Integrated Biomass and Small Hydro Solutions for Productive Uses
-    in Cameroon
+  filename: 2023/Evaluation report on Promoting integrated biomass and small hydro solutions for productive uses in Cameroon.pdf
+  title: Promoting Integrated Biomass and Small Hydro Solutions for Productive Uses in Cameroon
   short_title: Biomass & Small Hydro Cameroon
   year: 2022
   country: Cameroon
@@ -91,8 +95,7 @@ reports:
   overall_rating_label: Moderately Unsatisfactory
   sdgs: []
 - report_id: UNIDO-120601
-  filename: 2022/Evaluation report on the Low Carbon Low Emission Clean Energy Technology
-    Transfer Programme (2022).pdf
+  filename: 2022/Evaluation report on the Low Carbon Low Emission Clean Energy Technology Transfer Programme (2022).pdf
   title: Low Carbon Low Emission Clean Energy Technology Transfer (LCET) Programme
   short_title: LCET Programme
   year: 2022
@@ -106,10 +109,8 @@ reports:
   overall_rating_label: Unsatisfactory
   sdgs: []
 - report_id: UNIDO-130149
-  filename: 2022/Evaluation report on Promoting business models for increasing penetration
-    and scaling-up of solar energy in India (2022).pdf
-  title: Promoting business models for increasing penetration and scaling-up of solar
-    energy in India
+  filename: 2022/Evaluation report on Promoting business models for increasing penetration and scaling-up of solar energy in India (2022).pdf
+  title: Promoting business models for increasing penetration and scaling-up of solar energy in India
   short_title: Solar Business Models India
   year: 2022
   country: India
@@ -122,10 +123,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-150033
-  filename: 2022/Evaluation report on the Demonstration of BAT and BEP in open burning
-    activities in response to the Stockholm Convention on POPs.pdf
-  title: Demonstration of BAT and BEP in open burning activities in response to the
-    Stockholm Convention on POPs
+  filename: 2022/Evaluation report on the Demonstration of BAT and BEP in open burning activities in response to the Stockholm Convention on POPs.pdf
+  title: Demonstration of BAT and BEP in open burning activities in response to the Stockholm Convention on POPs
   short_title: BAT/BEP Open Burning POPs
   year: 2022
   country: Cambodia, Lao PDR, Mongolia, Philippines, Viet Nam
@@ -138,10 +137,8 @@ reports:
   overall_rating_label: Highly Satisfactory
   sdgs: []
 - report_id: UNIDO-190036
-  filename: 2022/Evaluation report on Strengthening capacity for operation and maintenance
-    with Internet of Things technologies in Kenya (2022).pdf
-  title: Strengthening capacity for operation and maintenance with IoT technologies
-    for Olkaria Geothermal Power Station in Kenya
+  filename: 2022/Evaluation report on Strengthening capacity for operation and maintenance with Internet of Things technologies in Kenya (2022).pdf
+  title: Strengthening capacity for operation and maintenance with IoT technologies for Olkaria Geothermal Power Station in Kenya
   short_title: IoT Geothermal Kenya
   year: 2022
   country: Kenya
@@ -154,8 +151,7 @@ reports:
   overall_rating_label: Moderately Unsatisfactory
   sdgs: []
 - report_id: UNIDO-100045
-  filename: 2023/Evaluation report on Sustainable Energy Initiative for Industries
-    in Pakistan.pdf
+  filename: 2023/Evaluation report on Sustainable Energy Initiative for Industries in Pakistan.pdf
   title: Sustainable Energy Initiative for Industries in Pakistan (REEE)
   short_title: REEE Pakistan
   year: 2023
@@ -169,10 +165,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-100114
-  filename: 2023/Evaluation report on Environmentally sound management of municipal
-    and hazardous solid saste to reduce emissions of unintentional POPs in Senegal.pdf
-  title: Environmentally Sound Management of Municipal and Hazardous Solid Waste to
-    Reduce Emissions of Unintentional POPs
+  filename: 2023/Evaluation report on Environmentally sound management of municipal and hazardous solid saste to reduce emissions of unintentional POPs in Senegal.pdf
+  title: Environmentally Sound Management of Municipal and Hazardous Solid Waste to Reduce Emissions of Unintentional POPs
   short_title: PRODEMUND Senegal POPs
   year: 2023
   country: Senegal
@@ -185,10 +179,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-100122
-  filename: 2023/Evaluation report on Removal of technical and economic barriers to
-    initiating the clean-up activities for contaminated sites at OHIS.pdf
-  title: Removal of Technical and Economic Barriers to Clean-up of HCH and Lindane
-    Contaminated Sites at OHIS
+  filename: 2023/Evaluation report on Removal of technical and economic barriers to initiating the clean-up activities for contaminated sites at OHIS.pdf
+  title: Removal of Technical and Economic Barriers to Clean-up of HCH and Lindane Contaminated Sites at OHIS
   short_title: OHIS Lindane North Macedonia
   year: 2023
   country: Republic of North Macedonia
@@ -201,8 +193,7 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-100313
-  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal
-    of PCBs in Serbia.pdf
+  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal of PCBs in Serbia.pdf
   title: Environmentally Sound Management and Final Disposal of PCBs in Serbia
   short_title: PCB Management Serbia
   year: 2023
@@ -216,10 +207,8 @@ reports:
   overall_rating_label: Highly Satisfactory
   sdgs: []
 - report_id: UNIDO-103029
-  filename: 2023/Evaluation report on Promoting energy efficiency and renewable energy
-    in selected micro, small and medium enterprise (MSME) clusters in India.pdf
-  title: Promoting energy efficiency and renewable energy in selected MSME clusters
-    in India
+  filename: 2023/Evaluation report on Promoting energy efficiency and renewable energy in selected micro, small and medium enterprise (MSME) clusters in India.pdf
+  title: Promoting energy efficiency and renewable energy in selected MSME clusters in India
   short_title: MSME Energy Efficiency India
   year: 2023
   country: India
@@ -232,8 +221,7 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-104044
-  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal
-    of PCBs in India.pdf
+  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal of PCBs in India.pdf
   title: Environmentally Sound Management and Final Disposal of PCBs in India
   short_title: PCB Disposal India
   year: 2023
@@ -247,8 +235,7 @@ reports:
   overall_rating_label: Moderately Unsatisfactory
   sdgs: []
 - report_id: UNIDO-104160
-  filename: 2023/Evaluation report on Environmentally sound management of medical
-    wastes in India (2023).pdf
+  filename: 2023/Evaluation report on Environmentally sound management of medical wastes in India (2023).pdf
   title: Environmentally Sound Management of Medical Wastes in India
   short_title: Medical Waste India
   year: 2023
@@ -262,8 +249,7 @@ reports:
   overall_rating_label: Moderately Unsatisfactory
   sdgs: []
 - report_id: UNIDO-120073
-  filename: 2023/Evaluation report on Utilizing solar energy for industrial process
-    heat in Egyptian industry.pdf
+  filename: 2023/Evaluation report on Utilizing solar energy for industrial process heat in Egyptian industry.pdf
   title: Utilizing Solar Energy for Industrial Process Heat in Egyptian Industry
   short_title: SHIP Egypt
   year: 2023
@@ -277,10 +263,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-120094
-  filename: 2023/Evaluation report on Increased energy access for productive use through
-    small hydropower development in rural areas in Madagascar.pdf
-  title: Increased energy access for productive use through small hydropower development
-    in rural areas in Madagascar
+  filename: 2023/Evaluation report on Increased energy access for productive use through small hydropower development in rural areas in Madagascar.pdf
+  title: Increased energy access for productive use through small hydropower development in rural areas in Madagascar
   short_title: Small Hydro Madagascar
   year: 2023
   country: Madagascar
@@ -293,8 +277,7 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-120264
-  filename: 2023/Evaluation report on GHG emissions reductions in targeted industrial
-    sub-sectors through EE and application of solar thermal systems in Malaysia.pdf
+  filename: 2023/Evaluation report on GHG emissions reductions in targeted industrial sub-sectors through EE and application of solar thermal systems in Malaysia.pdf
   title: Malaysia Energy Efficiency and Solar Thermal Application Project (MAEESTA)
   short_title: MAEESTA Malaysia
   year: 2023
@@ -309,24 +292,26 @@ reports:
   sdgs: []
 - report_id: UNIDO-120323
   filename: 2021/GF_ID-4890_GFURU-120323_TE_Report_2020_E.pdf.pdf
-  title: 'Towards a Green Economy in Uruguay: Stimulating Sustainable Production Practices
-    and Low-Emission Technologies'
+  title: 'Independent Terminal Evaluation: Towards a Green Economy in Uruguay — Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors'
   short_title: Biovalor Uruguay
-  year: 2023
+  year: 2021
   country: Uruguay
-  region: Latin America and the Caribbean
-  thematic_category: Circular Economy
-  report_type: terminal
+  region: Latin America
+  thematic_category: Climate Action
+  report_type: Project Evaluation
   donor: GEF
   budget_usd: 30500000
   evaluation_rating: 5.0
   overall_rating_label: Satisfactory
-  sdgs: []
+  sdgs:
+  - 7
+  - 9
+  - 12
+  - 13
+  - 17
 - report_id: UNIDO-120487
-  filename: 2023/Evaluation report on Industrial energy efficiency improvement in
-    South Africa.pdf
-  title: Industrial Energy Efficiency Improvement in South Africa through Mainstreaming
-    Energy Management Systems
+  filename: 2023/Evaluation report on Industrial energy efficiency improvement in South Africa.pdf
+  title: Industrial Energy Efficiency Improvement in South Africa through Mainstreaming Energy Management Systems
   short_title: SA IEE II South Africa
   year: 2023
   country: South Africa
@@ -339,8 +324,7 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-120568
-  filename: 2023/Evaluation report on Sustainable conversion of waste to clean energy
-    for Greenhouse Gas (GHG) emission reduction.pdf
+  filename: 2023/Evaluation report on Sustainable conversion of waste to clean energy for Greenhouse Gas (GHG) emission reduction.pdf
   title: Sustainable conversion of waste into clean energy to reduce GHG emissions
   short_title: Kenya WTE Biogas
   year: 2023
@@ -354,10 +338,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-130200
-  filename: 2023/Evaluation report on Start-up and first operational phase of the
-    Caribbean Centre for Renewable Energy and Energy Efficiency (CCREEE).pdf
-  title: Start-up and first operational phase of the Caribbean Centre for Renewable
-    Energy and Energy Efficiency
+  filename: 2023/Evaluation report on Start-up and first operational phase of the Caribbean Centre for Renewable Energy and Energy Efficiency (CCREEE).pdf
+  title: Start-up and first operational phase of the Caribbean Centre for Renewable Energy and Energy Efficiency
   short_title: CCREEE Caribbean
   year: 2023
   country: Caribbean (CARICOM 15 Member States)
@@ -370,10 +352,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-140019
-  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal
-    of PCBs at the Russian Railways network and other PCB owners (Phase I).pdf
-  title: Environmentally Sound Management and Final Disposal of PCBs at the Russian
-    Railways network (Phase I)
+  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal of PCBs at the Russian Railways network and other PCB owners (Phase I).pdf
+  title: Environmentally Sound Management and Final Disposal of PCBs at the Russian Railways network (Phase I)
   short_title: Russia PCB Phase I
   year: 2023
   country: Russian Federation
@@ -400,10 +380,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-140160
-  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal
-    of PCBs in the Republic of Congo.pdf
-  title: Environmentally Sound Management and Final Disposal of PCBs in Republic of
-    Congo
+  filename: 2023/Evaluation report on Environmentally Sound Management and Final Disposal of PCBs in the Republic of Congo.pdf
+  title: Environmentally Sound Management and Final Disposal of PCBs in Republic of Congo
   short_title: PCB Management Congo
   year: 2023
   country: Republic of Congo
@@ -416,10 +394,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-140276
-  filename: 2023/Evaluation report on First operational phase of the Pacific Centre
-    for Renewable Energy and Energy Efficiency.pdf
-  title: First Operational Phase of the Pacific Centre for Renewable Energy and Energy
-    Efficiency (PCREEE)
+  filename: 2023/Evaluation report on First operational phase of the Pacific Centre for Renewable Energy and Energy Efficiency.pdf
+  title: First Operational Phase of the Pacific Centre for Renewable Energy and Energy Efficiency (PCREEE)
   short_title: PCREEE Phase I
   year: 2023
   country: Pacific Island Countries and Territories
@@ -432,10 +408,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-140296
-  filename: 2023/Evaluation report on Environmentally sound management of PCB-containing
-    equipment and wastes and upgrade of technical expertise in Bolivia.pdf
-  title: Environmentally sound management and disposal of PCB-containing equipment
-    and disposal of DDT wastes in Bolivia
+  filename: 2023/Evaluation report on Environmentally sound management of PCB-containing equipment and wastes and upgrade of technical expertise in Bolivia.pdf
+  title: Environmentally sound management and disposal of PCB-containing equipment and disposal of DDT wastes in Bolivia
   short_title: PCB Management Bolivia
   year: 2023
   country: Bolivia
@@ -448,10 +422,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-140298
-  filename: 2023/Evaluation report on Environmentally sound management and disposal
-    of PCB-containing equipment and disposal of DDT wastes, upgrade of techn. expertise.pdf
-  title: Environmentally sound management and disposal of PCB-containing equipment
-    and disposal of DDT wastes in Guatemala
+  filename: 2023/Evaluation report on Environmentally sound management and disposal of PCB-containing equipment and disposal of DDT wastes, upgrade of techn. expertise.pdf
+  title: Environmentally sound management and disposal of PCB-containing equipment and disposal of DDT wastes in Guatemala
   short_title: PCB & DDT Disposal Guatemala
   year: 2023
   country: Guatemala
@@ -465,8 +437,7 @@ reports:
   sdgs: []
 - report_id: UNIDO-140307
   filename: 2022/EvalRep_GLO-140307-5832_CTCN_TE-2020.pdf
-  title: Promoting Accelerated Transfer and Scaled-up Deployment of Mitigation Technologies
-    through CTCN
+  title: Promoting Accelerated Transfer and Scaled-up Deployment of Mitigation Technologies through CTCN
   short_title: CTCN Programme
   year: 2023
   country: Global
@@ -479,10 +450,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-150049
-  filename: 2023/Evaluation report on Development and Implementation of a Sustainable
-    Management Mechanism for POPs in the Caribbean (UNIDO project No. 150049).pdf
-  title: Development and Implementation of a Sustainable Management Mechanism for
-    POPs in the Caribbean
+  filename: 2023/Evaluation report on Development and Implementation of a Sustainable Management Mechanism for POPs in the Caribbean (UNIDO project No. 150049).pdf
+  title: Development and Implementation of a Sustainable Management Mechanism for POPs in the Caribbean
   short_title: POPs Caribbean
   year: 2023
   country: Caribbean (8 countries)
@@ -495,8 +464,7 @@ reports:
   overall_rating_label: Highly Satisfactory
   sdgs: []
 - report_id: UNIDO-150157
-  filename: 2023/Evaluation report on the Integrated adoption of new energy vehicles
-    in China (2023).pdf
+  filename: 2023/Evaluation report on the Integrated adoption of new energy vehicles in China (2023).pdf
   title: Integrated Adoption of New Energy Vehicles in China (IANEV)
   short_title: EV-RE Integration China
   year: 2023
@@ -524,10 +492,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-150270
-  filename: 2023/Evaluation report on Sustainable cities management initiative for
-    Senegal.pdf
-  title: 'Sustainable Cities Initiative for Senegal: Promoting renewable energy and
-    integrated waste management'
+  filename: 2023/Evaluation report on Sustainable cities management initiative for Senegal.pdf
+  title: 'Sustainable Cities Initiative for Senegal: Promoting renewable energy and integrated waste management'
   short_title: SC Senegal
   year: 2023
   country: Senegal
@@ -540,8 +506,7 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-150346
-  filename: 2023/Evaluation report on Hosting and Managing Private Financing Advisory
-    Network.pdf
+  filename: 2023/Evaluation report on Hosting and Managing Private Financing Advisory Network.pdf
   title: Hosting and Managing the Private Financing Advisory Network (PFAN)
   short_title: PFAN
   year: 2023
@@ -555,8 +520,7 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-170117
-  filename: 2023/Evaluation report on Making polychlorinated biphenyls management
-    and elimination sustainable in Morocco.pdf
+  filename: 2023/Evaluation report on Making polychlorinated biphenyls management and elimination sustainable in Morocco.pdf
   title: Making PCB management and elimination mainstream in Morocco
   short_title: Morocco PCB Elimination
   year: 2023
@@ -584,10 +548,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-130310
-  filename: 2023/Evaluation report on Promoting organic waste-to-energy and other
-    low-carbon technologies in SMMEs_Accelerating biogas market dev. in South Africa.pdf
-  title: 'Promoting organic waste-to-energy and other low-carbon technologies in SMMEs:
-    Accelerating biogas market development in South Africa'
+  filename: 2023/Evaluation report on Promoting organic waste-to-energy and other low-carbon technologies in SMMEs_Accelerating biogas market dev. in South Africa.pdf
+  title: 'Promoting organic waste-to-energy and other low-carbon technologies in SMMEs: Accelerating biogas market development in South Africa'
   short_title: SA Biogas WtE
   year: 2023
   country: South Africa
@@ -600,10 +562,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-PCB-CLUSTER-001
-  filename: 2023/Final report on the independent terminal evaluation of a cluster
-    of UNIDO polychlorinated biphenyls (PCPs) projects.pdf
-  title: 'Cluster Evaluation: UNIDO Polychlorinated Biphenyls (PCBs) Projects (Bolivia,
-    Congo, Guatemala, India, Lao PDR, Morocco, Russia, Serbia)'
+  filename: 2023/Final report on the independent terminal evaluation of a cluster of UNIDO polychlorinated biphenyls (PCPs) projects.pdf
+  title: 'Cluster Evaluation: UNIDO Polychlorinated Biphenyls (PCBs) Projects (Bolivia, Congo, Guatemala, India, Lao PDR, Morocco, Russia, Serbia)'
   short_title: UNIDO PCB Cluster
   year: 2023
   country: Global (8 countries)
@@ -616,10 +576,8 @@ reports:
   overall_rating_label: Moderately Satisfactory
   sdgs: []
 - report_id: UNIDO-130249
-  filename: 2024/Evaluation report on Introduction of an environmentally sound management
-    and disposal system for PCB wastes and PCB decontaminated equipmentpdf.pdf
-  title: Introduction of an environmentally sound management and disposal system for
-    PCB wastes in Indonesia
+  filename: 2024/Evaluation report on Introduction of an environmentally sound management and disposal system for PCB wastes and PCB decontaminated equipmentpdf.pdf
+  title: Introduction of an environmentally sound management and disposal system for PCB wastes in Indonesia
   short_title: PCB Management Indonesia
   year: 2024
   country: Indonesia
@@ -646,10 +604,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-150050
-  filename: 2024/Evaluation report on Environmentally sound management of PCB wastes
-    and PCB-contaminated equipment in Sri Lanka.pdf
-  title: Environmentally sound management of PCB wastes and PCB-contaminated equipment
-    in Sri Lanka
+  filename: 2024/Evaluation report on Environmentally sound management of PCB wastes and PCB-contaminated equipment in Sri Lanka.pdf
+  title: Environmentally sound management of PCB wastes and PCB-contaminated equipment in Sri Lanka
   short_title: PCB Management Sri Lanka
   year: 2024
   country: Sri Lanka
@@ -662,10 +618,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-150052
-  filename: 2024/Evaluation report on Mainstreaming climate change adaptation through
-    water resource management in leather industrial zone development in Pakistan.pdf
-  title: Mainstreaming Climate Change Adaptation through Water Resource Management
-    in Leather Industrial Zone Development
+  filename: 2024/Evaluation report on Mainstreaming climate change adaptation through water resource management in leather industrial zone development in Pakistan.pdf
+  title: Mainstreaming Climate Change Adaptation through Water Resource Management in Leather Industrial Zone Development
   short_title: Climate Adaptation Pakistan Tannery
   year: 2024
   country: Pakistan
@@ -679,8 +633,7 @@ reports:
   sdgs: []
 - report_id: UNIDO-150263
   filename: 2024/Evaluation report on Towards sustainable energy for all in Mozambique.pdf
-  title: 'Towards Sustainable Energy for All in Mozambique: Promoting market-based
-    dissemination of integrated renewable energy systems'
+  title: 'Towards Sustainable Energy for All in Mozambique: Promoting market-based dissemination of integrated renewable energy systems'
   short_title: TSE4ALL Mozambique
   year: 2024
   country: Mozambique
@@ -693,10 +646,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-170046
-  filename: 2024/Evaluation report on Generating energy capacity from geothermal power
-    generation and its related technologies for sustainable development.pdf
-  title: Generating energy capacity from geothermal power generation and its related
-    technologies for sustainable development
+  filename: 2024/Evaluation report on Generating energy capacity from geothermal power generation and its related technologies for sustainable development.pdf
+  title: Generating energy capacity from geothermal power generation and its related technologies for sustainable development
   short_title: Geothermal Africa Programme
   year: 2024
   country: Kenya, Djibouti, Ethiopia, Rwanda, Tanzania, Uganda
@@ -713,8 +664,7 @@ reports:
   title: SwitchMed II — Southern Mediterranean
   short_title: SwitchMed II
   year: 2024
-  country: Southern Mediterranean (Algeria, Egypt, Israel, Jordan, Lebanon, Morocco,
-    Palestine, Tunisia)
+  country: Southern Mediterranean (Algeria, Egypt, Israel, Jordan, Lebanon, Morocco, Palestine, Tunisia)
   region: Arab Region
   thematic_category: Circular Economy
   report_type: terminal
@@ -724,10 +674,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-230030
-  filename: 2024/Evaluation report on Industrial capacity-building, policy advice
-    and diagnostics for the green recovery of Ukraine.pdf
-  title: Industrial capacity-building, policy advice and diagnostics for the green
-    recovery of Ukraine
+  filename: 2024/Evaluation report on Industrial capacity-building, policy advice and diagnostics for the green recovery of Ukraine.pdf
+  title: Industrial capacity-building, policy advice and diagnostics for the green recovery of Ukraine
   short_title: Green Recovery Ukraine
   year: 2024
   country: Ukraine
@@ -740,11 +688,8 @@ reports:
   overall_rating_label: Satisfactory
   sdgs: []
 - report_id: UNIDO-140297
-  filename: 2025/Evaluation report on Strengthening national initiatives and enhancement
-    of reg. coop. for environmentally sound management of POPs in WEEE in LAC countries_F-250612.pdf
-  title: Strengthening of National Initiatives and Enhancement of Regional Cooperation
-    for the Environmentally Sound Management of POPs in WEEE in Latin American Countries
-    (PREAL)
+  filename: 2025/Evaluation report on Strengthening national initiatives and enhancement of reg. coop. for environmentally sound management of POPs in WEEE in LAC countries_F-250612.pdf
+  title: Strengthening of National Initiatives and Enhancement of Regional Cooperation for the Environmentally Sound Management of POPs in WEEE in Latin American Countries (PREAL)
   short_title: PREAL WEEE Latin America
   year: 2025
   country: Latin America (13 countries)
@@ -772,8 +717,7 @@ reports:
   sdgs: []
 - report_id: UNIDO-150186
   filename: 2025/Evaluation_report_on_Greening_of_scrap_metal_value_chain_through_the_promotion_of_BAT-BEP_to_reduce_U-POPs_releases_from_recycling_facilities_in_Thailand.pdf
-  title: Greening of Scrap Metal Value Chain through the Promotion of BAT/BEP to Reduce
-    U-POPs Releases from Recycling Facilities
+  title: Greening of Scrap Metal Value Chain through the Promotion of BAT/BEP to Reduce U-POPs Releases from Recycling Facilities
   short_title: Scrap Metal Thailand
   year: 2025
   country: Thailand
