@@ -38,7 +38,7 @@ BACKEND_URL = get_backend_url()
 
 st.set_page_config(
     page_title="UNIDO Evaluation Intelligence Platform",
-    page_icon="🔍",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -684,7 +684,7 @@ def show_login_page():
                 if ok:
                     st.rerun()
                 else:
-                    st.error(f"❌ {msg}")
+                    st.error(f" {msg}")
         st.divider()
         st.caption("Access issues? Contact Maryam Babar (EIO Division).")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -729,18 +729,18 @@ def _report_detail_modal():
     rid      = rep.get("report_id", "")
 
     # Format fields
-    rating_str = f"★ {float(rating):.1f} / 6" if rating else "N/A"
+    rating_str = f" {float(rating):.1f} / 6" if rating else "N/A"
     budget_str = f"USD {budget/1e6:.1f}M" if budget and budget >= 1e5 else ""
     meta_items = [p for p in [country, rating_str, budget_str, donor] if p]
     meta_line  = " &nbsp;·&nbsp; ".join(
-        [f"📍 {country}" if country else "",
-         f"★ {float(rating):.1f}/6" if rating else "",
+        [f" {country}" if country else "",
+         f" {float(rating):.1f}/6" if rating else "",
          budget_str,
          donor]
     )
     meta_line = " &nbsp;·&nbsp; ".join(p for p in [
-        f"📍 {country}" if country else "",
-        f"★ {float(rating):.1f}/6" if rating else "",
+        f" {country}" if country else "",
+        f" {float(rating):.1f}/6" if rating else "",
         budget_str,
         donor,
     ] if p)
@@ -763,7 +763,7 @@ def _report_detail_modal():
     colors   = _section_colors()
 
     t_ov, t_ll, t_rec, t_sdg, t_ctx = st.tabs(
-        ["📋 Overview", "💡 Lessons Learned", "📌 Recommendations", "🌐 SDG Mapping", "📁 Context"]
+        ["Overview", "Lessons Learned", "Recommendations", "SDG Mapping", "Context"]
     )
 
     with t_ov:
@@ -785,13 +785,13 @@ def _report_detail_modal():
             st.markdown(sdg_badges_row(sdgs, 38), unsafe_allow_html=True)
         tag_line = ""
         if thematic:
-            tag_line += f'<span class="tag tag-blue">◈ {thematic}</span> '
+            tag_line += f'<span class="tag tag-blue">{thematic}</span> '
         if rating:
             try:
                 r = float(rating)
                 cls = "tag-green" if r >= 4.5 else ("tag-amber" if r >= 3.0 else "tag-red")
                 label = "Satisfactory" if r >= 4.0 else ("Moderately Satisfactory" if r >= 3.0 else "Unsatisfactory")
-                tag_line += f'<span class="tag {cls}">◈ {label}</span> '
+                tag_line += f'<span class="tag {cls}">{label}</span> '
             except Exception:
                 pass
         if tag_line:
@@ -824,23 +824,19 @@ def _report_detail_modal():
             st.caption("SDG mapping not available for this report.")
 
     with t_ctx:
-        # Funding description line
-        funding_parts = []
-        if donor:
-            funding_parts.append(f"Funded by <strong>{donor}</strong>.")
-        if country:
-            funding_parts.append(f"Implemented in {country}.")
-        funding_text = " ".join(funding_parts)
+        # Funding line
+        donor_val = rep.get("donor", "")
+        funding_text = f"Funded by <strong>{donor_val}</strong>. Implemented in {country}." if donor_val and country else (f"Implemented in {country}." if country else "")
         if funding_text:
             st.markdown(
-                f'<div style="font-size:0.86rem;color:#374151;margin-bottom:1.2rem;'
-                f'padding:0.6rem 0;border-bottom:1px solid #f3f4f6;">{funding_text}</div>',
+                f'<div style="font-size:0.85rem;color:#374151;margin-bottom:1rem;'
+                f'padding-bottom:0.8rem;border-bottom:1px solid #f0f0f0;">{funding_text}</div>',
                 unsafe_allow_html=True,
             )
 
-        # Grid of info cards — 2 rows × 3 columns
-        rating_lbl = "N/A"
-        if rating:
+        # Rating label from metadata
+        rating_lbl = rep.get("overall_rating_label") or "N/A"
+        if not rating_lbl and rating:
             try:
                 r_val = float(rating)
                 if r_val >= 4.5:    rating_lbl = "Highly Satisfactory"
@@ -850,39 +846,41 @@ def _report_detail_modal():
             except Exception:
                 pass
 
-        cards = [
-            ("BUDGET",   budget_str or "N/A"),
-            ("DURATION", rep.get("duration", "N/A")),
-            ("YEAR",     str(year) if year else "N/A"),
-            ("TYPE",     rtype.replace("Project Evaluation","Terminal") if rtype else "N/A"),
-            ("COUNTRY",  country or "N/A"),
-            ("RATING",   rating_lbl),
-        ]
-
         def _info_card(label, value):
             return (
-                f'<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;'
-                f'padding:0.7rem 0.9rem;">' 
-                f'<div style="font-size:0.65rem;font-weight:700;color:#9ca3af;'
-                f'letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.3rem;">{label}</div>'
-                f'<div style="font-size:0.92rem;font-weight:700;color:#111827;">{value}</div>'
+                f'<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem 1rem;">' 
+                f'<div style="font-size:0.64rem;font-weight:700;color:#9ca3af;'
+                f'letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.35rem;">{label}</div>'
+                f'<div style="font-size:0.9rem;font-weight:700;color:#111827;line-height:1.3;">{value}</div>'
                 f'</div>'
             )
 
-        rows = [cards[:3], cards[3:]]
-        for row in rows:
-            cols = st.columns(3)
-            for col, (lbl, val) in zip(cols, row):
-                with col:
-                    st.markdown(_info_card(lbl, val), unsafe_allow_html=True)
-            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        # Row 1: Budget | Year | Thematic Area
+        r1c1, r1c2, r1c3 = st.columns(3)
+        with r1c1:
+            st.markdown(_info_card("Budget", budget_str or "N/A"), unsafe_allow_html=True)
+        with r1c2:
+            st.markdown(_info_card("Year", str(year) if year else "N/A"), unsafe_allow_html=True)
+        with r1c3:
+            st.markdown(_info_card("Thematic Area", rep.get("thematic_category","N/A")), unsafe_allow_html=True)
+
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+        # Row 2: Type | Country | Rating
+        r2c1, r2c2, r2c3 = st.columns(3)
+        with r2c1:
+            st.markdown(_info_card("Type", rtype.replace("Project Evaluation","Terminal") if rtype else "N/A"), unsafe_allow_html=True)
+        with r2c2:
+            st.markdown(_info_card("Country", country or "N/A"), unsafe_allow_html=True)
+        with r2c3:
+            st.markdown(_info_card("Rating", rating_lbl), unsafe_allow_html=True)
 
     # ── Footer download ───────────────────────────────────────────────────────
     if sec_data and sec_data.get("sections"):
         st.divider()
         xl = make_excel_sections([rep], {rid: sec_data})
         st.download_button(
-            "⬇ Download Full Report as Excel",
+            "Download Full Report as Excel",
             data=xl,
             file_name=f"UNIDO_{rid}_Evaluation.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -902,7 +900,7 @@ def _rating_badge(rating) -> str:
     except (TypeError, ValueError):
         return '<span class="rating-pill rating-none">Rating: N/A</span>'
     cls = "rating-high" if r >= 4.5 else ("rating-mid" if r >= 3.0 else "rating-low")
-    return f'<span class="rating-pill {cls}">★ {r:.1f} / 6</span>'
+    return f'<span class="rating-pill {cls}"> {r:.1f} / 6</span>'
 
 
 def _section_colors() -> dict:
@@ -946,7 +944,7 @@ def show_search_tab(filters: dict):
     all_reps = sorted(all_reps, key=lambda r: r.get("report_id", ""))
 
     st.markdown(
-        '<div class="pilot-banner">📌 <strong>Pilot phase</strong> — '
+        '<div class="pilot-banner"><strong>Pilot phase</strong> — '
         'Showing 4 evaluation reports from 2021. Sections verified and ready for review.</div>',
         unsafe_allow_html=True,
     )
@@ -971,7 +969,7 @@ def show_search_tab(filters: dict):
         else:
             st.markdown(f"**{len(filtered)}** of **{len(all_reps)}** reports")
     with col_refresh:
-        if st.button("🔄", use_container_width=True, help="Refresh report list"):
+        if st.button("Refresh", use_container_width=True, help="Refresh report list"):
             load_reports(force=True)
             st.rerun()
 
@@ -1019,7 +1017,7 @@ def show_search_tab(filters: dict):
         """, unsafe_allow_html=True)
 
         # ── Action button row — compact, left-aligned ───────────────────────
-        btn_view, btn_ai, btn_export, _ = st.columns([1.4, 1.1, 1.1, 5])
+        btn_view, btn_ai, btn_export, _ = st.columns([3, 2, 2, 20])
 
         with btn_view:
             if st.button("View Details ↗", key=f"view_{rid}"):
@@ -1045,7 +1043,7 @@ def show_search_tab(filters: dict):
                     st.rerun()
             else:
                 st.download_button(
-                    label="⬇ Download",
+                    label="Download Excel",
                     data=st.session_state[exp_key],
                     file_name=f"UNIDO_{rid}_Evaluation.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1199,9 +1197,9 @@ def show_synthesis_tab(filters: dict):
                     st.error(str(e))
 
         st.info(
-            "💡 **AI Synthesis** (generates a written answer across reports) can be enabled "
+            " **AI Synthesis** (generates a written answer across reports) can be enabled "
             "by adding your Anthropic API key to `.env`. Currently showing raw retrieved passages.",
-            icon="ℹ️",
+            icon="Note:",
         )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1429,7 +1427,7 @@ def show_visualize_tab():
     st.divider()
 
     # ── Supporting charts ─────────────────────────────────────────────────────
-    with st.expander("📊 Portfolio Charts", expanded=False):
+    with st.expander(" Portfolio Charts", expanded=False):
         col_a, col_b = st.columns(2)
 
         with col_a:
@@ -1672,7 +1670,7 @@ def show_admin_tab():
                         st.error(r.json().get("detail","Error"))
         with c4:
             if u["username"] != st.session_state.username:
-                if st.button("🗑", key=f"del_{u['username']}"):
+                if st.button("", key=f"del_{u['username']}"):
                     r = api("DELETE", f"/api/v1/admin/users/{u['username']}")
                     if r.status_code == 200:
                         st.success(r.json()["detail"]); st.rerun()
@@ -1708,7 +1706,7 @@ def show_admin_tab():
                 r = api("POST", "/api/v1/admin/users",
                         json={"username": nu, "password": np, "display_name": nd, "role": nr})
                 if r.status_code == 200:
-                    st.success(f"✅ User '{nu}' created."); st.rerun()
+                    st.success(f" User '{nu}' created."); st.rerun()
                 else:
                     st.error(r.json().get("detail","Error"))
 
@@ -1748,7 +1746,7 @@ def show_main_app():
         <span class="unido-logo">UNIDO</span>
         <span class="unido-sub"> &nbsp;|&nbsp; Evaluation Intelligence Platform &nbsp;·&nbsp; IEU / EIO</span>
       </div>
-      <div class="user-chip">👤 {st.session_state.display_name}</div>
+      <div class="user-chip"> {st.session_state.display_name}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1858,15 +1856,15 @@ def show_main_app():
                             unsafe_allow_html=True)
                 qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
                 st.markdown(f'<span class="dot {qcls}"></span> Qdrant '
-                            f'{"✓" if h.get("qdrant_connected") else "✗"}',
+                            f'{"" if h.get("qdrant_connected") else ""}',
                             unsafe_allow_html=True)
                 if h.get("document_count", 0):
                     st.caption(f"{h['document_count']:,} chunks indexed")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_names = ["🔍 Search & Browse", "🤝 Synthesis", "📊 Visualize", "🎯 OECD-DAC"]
+    tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
     if is_admin:
-        tab_names.append("⚙️ Admin")
+        tab_names.append("Admin")
 
     tabs = st.tabs(tab_names)
 
