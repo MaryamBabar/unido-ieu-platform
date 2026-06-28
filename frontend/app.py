@@ -120,6 +120,62 @@ THEMATIC_AREAS = [
     "Gender & Inclusion", "Digital Innovation",
 ]
 
+# ── Pilot report metadata (source of truth — overrides backend/Qdrant) ───────
+PILOT_METADATA: dict[str, dict] = {
+    "UNIDO-100043": {
+        "title":               'Independent Terminal Evaluation: "Bamboo Processing for Sri Lanka"',
+        "year":                2021,
+        "country":             "Sri Lanka",
+        "region":              "Asia and the Pacific",
+        "thematic_category":   "Agro-Industry & Food Systems",
+        "report_type":         "Project Evaluation",
+        "donor":               "GEF",
+        "budget_usd":          23652000,
+        "evaluation_rating":   2.0,
+        "overall_rating_label":"Unsatisfactory",
+        "sdgs":                [8, 12, 15],
+    },
+    "UNIDO-100321": {
+        "title":               "Independent Terminal Evaluation: Initiation of the HCFC Phase Out in the Republic of Azerbaijan",
+        "year":                2021,
+        "country":             "Azerbaijan",
+        "region":              "Europe and Central Asia",
+        "thematic_category":   "Chemicals & POPs",
+        "report_type":         "Project Evaluation",
+        "donor":               "GEF",
+        "budget_usd":          9170000,
+        "evaluation_rating":   5.0,
+        "overall_rating_label":"Satisfactory",
+        "sdgs":                [12, 13, 17],
+    },
+    "UNIDO-104112": {
+        "title":               "Independent Terminal Evaluation: Promoting the Adaptation and Adoption of RECP Through the Establishment and Operation of a Cleaner Production Centre (CPC) in Ukraine",
+        "year":                2021,
+        "country":             "Ukraine",
+        "region":              "Europe and Central Asia",
+        "thematic_category":   "Circular Economy / Waste Management",
+        "report_type":         "Project Evaluation",
+        "donor":               "Switzerland (SECO), Austria",
+        "budget_usd":          5181779,
+        "evaluation_rating":   5.0,
+        "overall_rating_label":"Satisfactory",
+        "sdgs":                [9, 12, 13, 17],
+    },
+    "UNIDO-120323": {
+        "title":               "Independent Terminal Evaluation: Towards a Green Economy in Uruguay — Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors",
+        "year":                2021,
+        "country":             "Uruguay",
+        "region":              "Latin America",
+        "thematic_category":   "Climate Action",
+        "report_type":         "Project Evaluation",
+        "donor":               "GEF",
+        "budget_usd":          30500000,
+        "evaluation_rating":   5.0,
+        "overall_rating_label":"Satisfactory",
+        "sdgs":                [7, 9, 12, 13, 17],
+    },
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CSS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -339,6 +395,13 @@ def load_reports(force: bool = False):
         else:
             # Fall back to Qdrant only
             merged = qdrant_reports
+
+        # Apply pilot metadata overrides — guarantees correct titles/ratings
+        # regardless of what Qdrant or the backend returns
+        for rep in merged:
+            rid = rep.get("report_id", "")
+            if rid in PILOT_METADATA:
+                rep.update(PILOT_METADATA[rid])
 
         st.session_state.all_reports = sorted(
             merged, key=lambda r: r.get("year") or 0, reverse=True
