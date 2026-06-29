@@ -798,6 +798,19 @@ def show_sdg_legend():
 # Report Detail Modal
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _load_ai_extraction(report_id: str) -> dict:
+    """Load Gemini-extracted JSON for a report, or {} if not yet generated."""
+    import pathlib
+    p = pathlib.Path(__file__).parent.parent / "data" / "ai_extractions" / f"{report_id}.json"
+    if p.exists():
+        try:
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
 @st.dialog("Evaluation Report", width="large")
 def _report_detail_modal():
     """Professional modal matching the EIO platform design."""
@@ -815,6 +828,15 @@ def _report_detail_modal():
     rtype    = rep.get("report_type", "Terminal Evaluation")
     sdgs     = rep.get("sdgs") or []
     rid      = rep.get("report_id", "")
+
+    # Load Gemini AI extraction (if script has been run)
+    ai = _load_ai_extraction(rid)
+
+    # Override thematic area from AI extraction if available
+    if ai.get("primary_thematic_area"):
+        thematic = ai["primary_thematic_area"]
+    if ai.get("context", {}).get("evaluation_rating"):
+        rating = ai["context"]["evaluation_rating"]
 
     # Format fields
     rating_str = f" {float(rating):.1f} / 6" if rating else "N/A"
@@ -856,17 +878,18 @@ def _report_detail_modal():
 
     with t_ov:
         st.markdown("#### AI Executive Summary")
-        summary = rep.get("executive_summary") or sections.get("findings", "")
+        summary = ai.get("executive_summary") or rep.get("executive_summary") or sections.get("findings", "")
         if summary:
+            ai_badge = '<span style="background:#e0f2fe;color:#0369a1;font-size:0.65rem;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:0.06em;margin-right:8px;">✨ AI GENERATED</span>' if ai.get("executive_summary") else ""
             st.markdown(
                 f'<div style="background:#f8faff;border-left:4px solid #003da5;'
                 f'border-radius:0 8px 8px 0;padding:0.9rem 1.1rem;'
                 f'font-size:0.88rem;line-height:1.7;color:#1e293b;">'
-                f'{summary[:1800]}</div>',
+                f'{ai_badge}{summary[:2000]}</div>',
                 unsafe_allow_html=True,
             )
         else:
-            st.caption("Executive summary not available for this report.")
+            st.caption("Run `python scripts/ai_extract_gemini.py` to generate AI summaries.")
 
         st.markdown("#### Classification")
         if sdgs:
@@ -885,31 +908,70 @@ def _report_detail_modal():
         if tag_line:
             st.markdown(tag_line, unsafe_allow_html=True)
 
+        if ai.get("thematic_justification"):
+            st.markdown(
+                f'<div style="margin-top:0.7rem;font-size:0.78rem;color:#6b7280;'
+                f'font-style:italic;padding-left:0.5rem;">'
+                f'<strong>Why this theme:</strong> {ai["thematic_justification"]}</div>',
+                unsafe_allow_html=True,
+            )
+
     with t_ll:
-        c, bg = colors["lessons_learned"]
-        _render_section_block("Lessons Learned", sections.get("lessons_learned", ""), c, bg)
+        ai_lessons = ai.get("lessons_learned", [])
+        if ai_lessons:
+            st.markdown('<div style="font-size:0.7rem;color:#0369a1;font-weight:700;letter-spacing:0.06em;margin-bottom:0.6rem;">✨ AI EXTRACTED</div>', unsafe_allow_html=True)
+            for i, lesson in enumerate(ai_lessons, 1):
+                st.markdown(
+                    f'<div style="background:#e0f2fe;border-left:3px solid #0369a1;'
+                    f'border-radius:0 8px 8px 0;padding:0.7rem 1rem;margin-bottom:0.5rem;'
+                    f'font-size:0.86rem;line-height:1.6;color:#0c4a6e;">'
+                    f'<strong>{i}.</strong> {lesson}</div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            c, bg = colors["lessons_learned"]
+            _render_section_block("Lessons Learned", sections.get("lessons_learned", ""), c, bg)
 
     with t_rec:
-        c, bg = colors["recommendations"]
-        _render_section_block("Recommendations", sections.get("recommendations", ""), c, bg)
+        ai_recs = ai.get("recommendations", [])
+        if ai_recs:
+            st.markdown('<div style="font-size:0.7rem;color:#9a3412;font-weight:700;letter-spacing:0.06em;margin-bottom:0.6rem;">✨ AI EXTRACTED</div>', unsafe_allow_html=True)
+            for i, rec in enumerate(ai_recs, 1):
+                st.markdown(
+                    f'<div style="background:#fff7ed;border-left:3px solid #ea580c;'
+                    f'border-radius:0 8px 8px 0;padding:0.7rem 1rem;margin-bottom:0.5rem;'
+                    f'font-size:0.86rem;line-height:1.6;color:#7c2d12;">'
+                    f'<strong>{i}.</strong> {rec}</div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            c, bg = colors["recommendations"]
+            _render_section_block("Recommendations", sections.get("recommendations", ""), c, bg)
 
     with t_sdg:
-        if sdgs:
-            cols = st.columns(2)
-            for i, n in enumerate(sorted(sdgs)):
-                with cols[i % 2]:
-                    badge = sdg_badge_html(n, 40)
-                    st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:10px;'
-                        f'margin-bottom:0.6rem;">'
-                        f'{badge}'
-                        f'<div><strong>SDG {n}</strong><br>'
-                        f'<span style="font-size:0.8rem;color:#6b7280;">{SDG_NAMES.get(n,"")}</span>'
-                        f'</div></div>',
-                        unsafe_allow_html=True,
-                    )
+        ai_sdg_map = ai.get("sdg_mapping", {})
+        # Merge: use AI SDGs + existing SDGs from metadata
+        all_sdg_nums = sorted(set(
+            [int(k) for k in ai_sdg_map.keys() if str(k).isdigit()] +
+            ([int(s) for s in sdgs if str(s).isdigit()] if sdgs else [])
+        ))
+        if all_sdg_nums:
+            if ai_sdg_map:
+                st.markdown('<div style="font-size:0.7rem;color:#166534;font-weight:700;letter-spacing:0.06em;margin-bottom:0.8rem;">✨ AI MAPPED WITH JUSTIFICATIONS</div>', unsafe_allow_html=True)
+            for n in all_sdg_nums:
+                badge = sdg_badge_html(n, 38)
+                justification = ai_sdg_map.get(str(n), "")
+                just_html = f'<div style="font-size:0.78rem;color:#6b7280;margin-top:3px;font-style:italic;">{justification}</div>' if justification else ""
+                st.markdown(
+                    f'<div style="display:flex;align-items:flex-start;gap:12px;'
+                    f'background:#f0fdf4;border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.45rem;">'
+                    f'{badge}'
+                    f'<div><strong style="font-size:0.88rem;">SDG {n} — {SDG_NAMES.get(n,"")}</strong>'
+                    f'{just_html}</div></div>',
+                    unsafe_allow_html=True,
+                )
         else:
-            st.caption("SDG mapping not available for this report.")
+            st.caption("Run `python scripts/ai_extract_gemini.py` to generate SDG mapping with justifications.")
 
     with t_ctx:
         # Funding line
@@ -1921,85 +1983,4 @@ def show_main_app():
             "region":     region_sel,
             "years":      [yr_sel] if yr_sel != "All years" else [],
             "year_min":   yr_sel if yr_sel != "All years" else None,
-            "year_max":   yr_sel if yr_sel != "All years" else None,
-            "dac":        [],
-        }
-
-        st.divider()
-        st.markdown("### System")
-        if st.button("Health check", use_container_width=True):
-            try:
-                rh = httpx.get(f"{BACKEND_URL}/api/v1/health", timeout=8)
-                st.session_state.backend_healthy = rh.json()
-            except Exception as e:
-                st.session_state.backend_healthy = {"error": str(e)}
-        if st.session_state.backend_healthy:
-            h = st.session_state.backend_healthy
-            if "error" in h:
-                st.markdown('<span class="dot dot-red"></span> Unreachable',
-                            unsafe_allow_html=True)
-            else:
-                cls = "dot-green" if h.get("status") == "healthy" else "dot-amber"
-                st.markdown(f'<span class="dot {cls}"></span> {h.get("status","").title()}',
-                            unsafe_allow_html=True)
-                qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
-                st.markdown(f'<span class="dot {qcls}"></span> Qdrant '
-                            f'{"" if h.get("qdrant_connected") else ""}',
-                            unsafe_allow_html=True)
-                if h.get("document_count", 0):
-                    st.caption(f"{h['document_count']:,} chunks indexed")
-
-    # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
-    if is_admin:
-        tab_names.append("Admin")
-
-    tabs = st.tabs(tab_names)
-
-    # ── Ask AI redirect: pre-select report and jump to Synthesis tab ──────────
-    if st.session_state.pop("synth_goto", False):
-        import streamlit.components.v1 as components
-        components.html(
-            """
-            <script>
-              setTimeout(function() {
-                var tabBtns = window.parent.document.querySelectorAll(
-                  '[data-testid="stTabs"] button[role="tab"]'
-                );
-                if (tabBtns && tabBtns.length > 1) { tabBtns[1].click(); }
-              }, 180);
-            </script>
-            """,
-            height=0,
-            scrolling=False,
-        )
-
-    with tabs[0]:
-        show_search_tab(filters)
-    with tabs[1]:
-        show_synthesis_tab(filters)
-    with tabs[2]:
-        show_visualize_tab()
-    with tabs[3]:
-        show_dac_tab()
-    if is_admin:
-        with tabs[4]:
-            show_admin_tab()
-
-    st.divider()
-    st.markdown(
-        "<p style='text-align:center;color:#9ca3af;font-size:.72rem;'>"
-        "UNIDO IEU Evaluation Intelligence Platform · Internal use only · "
-        "Retrieved passages should be verified against source documents before formal citation."
-        "</p>",
-        unsafe_allow_html=True,
-    )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Router
-# ─────────────────────────────────────────────────────────────────────────────
-
-if not st.session_state.session_token:
-    show_login_page()
-else:
-    show_main_app()
+           
