@@ -299,7 +299,14 @@ st.markdown("""
     --danger: #ef4444; --success: #22c55e; --amber: #f59e0b;
   }
   #MainMenu, footer, header { visibility: hidden; }
-  .main .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1280px; }
+  .main .block-container {
+    padding-top: 1rem; padding-bottom: 2rem;
+    max-width: 100% !important; padding-left: 1.5rem; padding-right: 1.5rem;
+  }
+  /* Remove extra top padding Streamlit adds above columns */
+  div[data-testid="stVerticalBlock"] > div { gap: 0.4rem; }
+  /* Tighten column gaps */
+  div[data-testid="stHorizontalBlock"] { gap: 0.5rem; }
 
   .unido-header {
     background: white; border-bottom: 2px solid var(--blue);
@@ -1374,40 +1381,42 @@ def show_search_tab(filters: dict):
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Action button row — tight group on the left ─────────────────────
-        btn_view, btn_ai, btn_export, _spacer = st.columns([1.4, 1, 1, 6], gap="small")
+        # ── Action buttons — nested columns so they hug left at fixed width ───
+        _btn_col, _ = st.columns([3, 7])
+        with _btn_col:
+            btn_view, btn_ai, btn_export = st.columns(3, gap="small")
 
-        with btn_view:
-            if st.button("View Details ↗", key=f"view_{rid}", use_container_width=True):
-                with st.spinner("Loading…"):
-                    sec_data = load_sections(rid)
-                st.session_state["modal_rep"] = rep
-                st.session_state["modal_sec"] = sec_data
-                _report_detail_modal()
+            with btn_view:
+                if st.button("View Details ↗", key=f"view_{rid}", use_container_width=True):
+                    with st.spinner("Loading…"):
+                        sec_data = load_sections(rid)
+                    st.session_state["modal_rep"] = rep
+                    st.session_state["modal_sec"] = sec_data
+                    _report_detail_modal()
 
-        with btn_ai:
-            if st.button("Ask AI", key=f"askai_{rid}", type="primary", use_container_width=True):
-                st.session_state["synth_sel"] = [rid]
-                st.session_state["synth_goto"] = True
-                st.rerun()
-
-        with btn_export:
-            exp_key = f"export_bytes_{rid}"
-            if not st.session_state.get(exp_key):
-                if st.button("Export", key=f"exp_{rid}", use_container_width=True):
-                    with st.spinner("Preparing Excel…"):
-                        sec_e = load_sections(rid)
-                    st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
+            with btn_ai:
+                if st.button("Ask AI", key=f"askai_{rid}", type="primary", use_container_width=True):
+                    st.session_state["synth_sel"] = [rid]
+                    st.session_state["synth_goto"] = True
                     st.rerun()
-            else:
-                st.download_button(
-                    label="⬇ Excel",
-                    data=st.session_state[exp_key],
-                    file_name=f"UNIDO_{rid}_Evaluation.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_{rid}",
-                    use_container_width=True,
-                )
+
+            with btn_export:
+                exp_key = f"export_bytes_{rid}"
+                if not st.session_state.get(exp_key):
+                    if st.button("Export", key=f"exp_{rid}", use_container_width=True):
+                        with st.spinner("Preparing Excel…"):
+                            sec_e = load_sections(rid)
+                        st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
+                        st.rerun()
+                else:
+                    st.download_button(
+                        label="⬇ Excel",
+                        data=st.session_state[exp_key],
+                        file_name=f"UNIDO_{rid}_Evaluation.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_{rid}",
+                        use_container_width=True,
+                    )
 
         st.markdown(
             "<div style='border-top:1px solid #f0f0f0;margin:0.6rem 0 0.8rem;'></div>",
