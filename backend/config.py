@@ -29,10 +29,15 @@ class Config:
     LANGCHAIN_TRACING_V2: str = os.getenv("LANGCHAIN_TRACING_V2", "true")
 
     # ── RAG parameters ────────────────────────────────────────────────────────
-    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "400"))
-    CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "80"))
-    RETRIEVAL_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "20"))
-    RERANK_TOP_N: int = int(os.getenv("RERANK_TOP_N", "6"))
+    # Larger chunks (600 tokens) give more context per passage — important for
+    # evaluation reports where a single lesson spans multiple sentences.
+    # Higher overlap (150) prevents key content falling at chunk boundaries.
+    # Broader retrieval (top-K 30) then tight reranking (top-N 10) gives
+    # higher recall without sacrificing precision.
+    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "600"))
+    CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "150"))
+    RETRIEVAL_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "30"))
+    RERANK_TOP_N: int = int(os.getenv("RERANK_TOP_N", "10"))
     RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
 
     # ── FastAPI ───────────────────────────────────────────────────────────────

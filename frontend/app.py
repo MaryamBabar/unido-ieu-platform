@@ -128,12 +128,39 @@ PILOT_METADATA: dict[str, dict] = {
         "country":             "Sri Lanka",
         "region":              "Asia and the Pacific",
         "thematic_category":   "Agro-Industry & Food Systems",
+        "secondary_thematic_area": "Circular Economy / Waste Management",
         "report_type":         "Project Evaluation",
         "donor":               "GEF",
         "budget_usd":          23652000,
         "evaluation_rating":   2.0,
         "overall_rating_label":"Unsatisfactory",
         "sdgs":                [8, 12, 15],
+        "thematic_justification": (
+            "The project focused on developing the bamboo value chain as an agro-industrial sector, "
+            "supporting smallholder farmers and SMEs in the processing and commercialization of "
+            "bamboo-based products as a sustainable alternative to timber. Its core activities centred "
+            "on agro-industry capacity building, technology transfer for bamboo processing equipment, "
+            "and market development for agricultural value-added products."
+        ),
+        "sdg_justifications": {
+            "8":  "The project aimed to create employment and income for smallholder bamboo farmers and processing enterprises in rural Sri Lanka, directly contributing to SDG 8 (Decent Work and Economic Growth) through agro-industrial value chain development.",
+            "12": "By promoting bamboo as a renewable, fast-growing alternative to timber and conventional inputs, the project advanced responsible consumption and production patterns (SDG 12) in the construction, handicraft, and packaging industries.",
+            "15": "Bamboo cultivation and plantation management conserves soil, reduces erosion, and provides an alternative to unsustainable timber extraction, contributing to SDG 15 (Life on Land) through sustainable forestry and land-use practices in Sri Lanka.",
+        },
+        "lessons_learned": [
+            "Thorough feasibility and market studies must be completed before project design is finalised — the Sri Lanka bamboo project suffered from overestimated market demand and insufficient baseline data on bamboo resource availability.",
+            "Private sector buy-in and co-financing commitments should be secured prior to project start. Over-reliance on small-scale farmers without commercial processing partners limited the project's ability to achieve value chain scale.",
+            "Adaptive management mechanisms must be built into project design: when market conditions diverge significantly from projections, project teams need explicit authority and resources to redesign activities mid-course.",
+            "Technology transfer activities are only effective when accompanied by sustained market linkage support. Providing processing equipment without ensuring buyers and commercial relationships undermined enterprise viability.",
+            "Realistic sustainability planning requires honest assessment of cost recovery potential. Processing enterprises could not achieve financial break-even at projected volumes, indicating project design assumptions were overly optimistic.",
+        ],
+        "recommendations": [
+            "UNIDO and GEF should commission a comprehensive post-project market assessment to determine whether commercial bamboo processing viability has improved sufficiently to justify a follow-on phase with restructured value chain support.",
+            "The National Bamboo Committee should establish a dedicated market development function, focused on connecting processing enterprises with domestic and export buyers, as a condition for any future phase of bamboo sector support.",
+            "Future agro-industry projects in Sri Lanka should require binding private sector co-financing agreements — not in-kind or contingent contributions — before project approval, to ensure genuine commercial interest and shared financial risk.",
+            "UNIDO should integrate systematic adaptive management reviews at 18-month intervals in complex agro-industry projects, with explicit decision gates allowing activity redesign when market assumptions prove incorrect.",
+            "The Government of Sri Lanka should establish a bamboo sector monitoring system within the Ministry of Agriculture to track plantation area, processing enterprise performance, and market offtake independently of donor project support.",
+        ],
     },
     "UNIDO-100321": {
         "title":               "Independent Terminal Evaluation: Initiation of the HCFC Phase Out in the Republic of Azerbaijan",
@@ -141,12 +168,39 @@ PILOT_METADATA: dict[str, dict] = {
         "country":             "Azerbaijan",
         "region":              "Europe and Central Asia",
         "thematic_category":   "Chemicals & POPs",
+        "secondary_thematic_area": "Climate Action",
         "report_type":         "Project Evaluation",
         "donor":               "GEF",
         "budget_usd":          9170000,
         "evaluation_rating":   5.0,
         "overall_rating_label":"Satisfactory",
         "sdgs":                [12, 13, 17],
+        "thematic_justification": (
+            "The project directly targeted the phase-out of hydrochlorofluorocarbons (HCFCs) — "
+            "ozone-depleting and high global warming potential substances — under the Montreal Protocol "
+            "and the Multilateral Fund. This positions it firmly in the Chemicals & POPs thematic area, "
+            "involving import/export controls, customs training, refrigerant conversion in enterprises, "
+            "and institutional strengthening for chemical substance management in Azerbaijan."
+        ),
+        "sdg_justifications": {
+            "12": "The project phased out HCFCs in the refrigeration, air conditioning, and foam sectors of Azerbaijan, replacing them with ozone- and climate-friendly alternatives, directly advancing SDG 12 (Responsible Consumption and Production) by eliminating harmful substances from industrial processes.",
+            "13": "HCFCs are potent greenhouse gases in addition to being ozone-depleting substances. By phasing them out and transitioning enterprises to low-GWP refrigerants, the project contributes to SDG 13 (Climate Action) through measurable reductions in greenhouse gas emissions.",
+            "17": "The project was implemented under the Multilateral Fund for the Implementation of the Montreal Protocol — a flagship example of global partnership. It relied on international technology transfer and multi-stakeholder coordination, directly embodying SDG 17 (Partnerships for Goals).",
+        },
+        "lessons_learned": [
+            "Effective HCFC phase-out requires early and sustained investment in customs officer training and enforcement capacity — without this, import controls remain ineffective regardless of regulatory frameworks in place.",
+            "Strong government ownership and institutional embedding of phase-out management structures are the most reliable predictors of long-term programme sustainability beyond project closure.",
+            "Enterprise recruitment and conversion timelines are consistently underestimated in phase-out projects; building in flexible implementation schedules and contingency for enterprise mobilisation delays significantly improves delivery.",
+            "South-South cooperation and regional experience sharing among Montreal Protocol parties accelerates learning and reduces the cost of technology conversion by enabling beneficiary countries to learn from peers who have already undertaken similar transitions.",
+            "Verification and monitoring systems for phase-out achievement must be designed to be maintained by national counterparts after project completion; systems that depend on international consultants are not sustainable.",
+        ],
+        "recommendations": [
+            "The Azerbaijan government should sustain the customs enforcement and HCFC monitoring system established under the project by integrating it into routine operations of the State Customs Committee with dedicated staffing and budget.",
+            "UNIDO and the Multilateral Fund should ensure that Azerbaijan's HCFC Phase-Out Management Plan (HPMP) Stage II builds directly on enterprise conversion data and lessons from Stage I, avoiding duplication and building on established relationships.",
+            "The Ministry of Ecology and Natural Resources should expand the HCFC licensing and quota system to cover all identified importers and distributors, closing regulatory gaps identified during Stage I implementation.",
+            "Future Montreal Protocol projects in similar economies should build enterprise verification mechanisms that can be operated by national inspectorates without international consultant support from the start of implementation.",
+            "UNIDO should support Azerbaijan in developing refrigerant recovery and recycling infrastructure as a priority in subsequent programme stages, addressing the long-term management of phased-out substances currently lacking end-of-life pathways.",
+        ],
     },
     "UNIDO-104112": {
         "title":               "Independent Terminal Evaluation: Promoting the Adaptation and Adoption of RECP Through the Establishment and Operation of a Cleaner Production Centre (CPC) in Ukraine",
@@ -154,12 +208,40 @@ PILOT_METADATA: dict[str, dict] = {
         "country":             "Ukraine",
         "region":              "Europe and Central Asia",
         "thematic_category":   "Circular Economy / Waste Management",
+        "secondary_thematic_area": "Industrial Policy & Competitiveness",
         "report_type":         "Project Evaluation",
         "donor":               "Switzerland (SECO), Austria",
         "budget_usd":          5181779,
         "evaluation_rating":   5.0,
         "overall_rating_label":"Satisfactory",
         "sdgs":                [9, 12, 13, 17],
+        "thematic_justification": (
+            "The project established and operationalized Ukraine's National Cleaner Production Centre "
+            "(CPC) to mainstream Resource-Efficient and Cleaner Production (RECP) methodologies across "
+            "Ukrainian industry. RECP is the foundational framework of circular economy thinking in "
+            "industrial contexts — reducing material inputs, minimising waste, improving energy "
+            "efficiency, and preventing pollution at source."
+        ),
+        "sdg_justifications": {
+            "9":  "By establishing the RECP Centre and providing technical assistance to enterprises across multiple industrial sub-sectors, the project fostered inclusive and sustainable industrialization (SDG 9), promoting innovation in production processes and infrastructure for clean technology adoption.",
+            "12": "Resource-Efficient and Cleaner Production (RECP) is the operational methodology for achieving sustainable consumption and production (SDG 12) in industry. The project trained enterprises to reduce raw material consumption, minimize waste, and adopt more sustainable production patterns.",
+            "13": "RECP assessments identified energy efficiency improvements and emission reduction opportunities. The adoption of cleaner production technologies directly reduces industrial greenhouse gas emissions, contributing to SDG 13 (Climate Action) at the enterprise and sectoral level.",
+            "17": "The project was implemented through a partnership between UNIDO, Switzerland (SECO), and Austrian development cooperation alongside Ukrainian counterparts — a multi-donor, multi-stakeholder approach that exemplifies SDG 17 (Partnerships for the Goals).",
+        },
+        "lessons_learned": [
+            "Embedding a national RECP Centre within an established host institution from project inception significantly increases institutional sustainability and reduces operational fragility compared to standalone project management units.",
+            "Integration of RECP methodology into university curricula and vocational training systems creates long-term capacity that persists beyond project timeframes, multiplying impact through trained professionals entering industry.",
+            "RECP assessments are most effective when enterprise participation is genuinely voluntary and demand-driven rather than supply-pushed; enterprises that self-select into the programme achieve higher implementation rates of identified improvements.",
+            "Developing fee-for-service revenue models for RECP centres from an early stage of project implementation reduces dependence on donor funding and builds a commercially sustainable knowledge services market.",
+            "Multi-donor programmes benefit from clear governance arrangements and defined roles between implementing partners at the outset; ambiguity in donor coordination creates delays and inconsistent reporting.",
+        ],
+        "recommendations": [
+            "The Ukrainian RECP Centre should develop and implement a five-year financial sustainability plan that progressively reduces dependence on UNIDO project funding by growing fee-for-service revenues from RECP assessments and training services.",
+            "UNIDO should support the RECP Centre in establishing a national RECP policy framework that mandates periodic environmental and resource efficiency audits for enterprises above a defined threshold, creating a sustained demand base for Centre services.",
+            "The Ministry of Environmental Protection and Natural Resources of Ukraine should integrate RECP principles and indicators into national industrial development strategies and green economy action plans.",
+            "Future RECP Centre projects should include a formal mentoring relationship with an established RECP Centre from a peer country from project inception, accelerating institutional learning and reducing the cost of establishing core competencies.",
+            "UNIDO and donors should consider co-financing a green credit facility aligned with the RECP Centre to enable enterprises to finance the implementation of identified RECP improvements, converting assessments into measurable resource savings.",
+        ],
     },
     "UNIDO-120323": {
         "title":               "Independent Terminal Evaluation: Towards a Green Economy in Uruguay — Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors",
@@ -167,12 +249,41 @@ PILOT_METADATA: dict[str, dict] = {
         "country":             "Uruguay",
         "region":              "Latin America",
         "thematic_category":   "Climate Action",
+        "secondary_thematic_area": "Clean / Renewable Energy",
         "report_type":         "Project Evaluation",
         "donor":               "GEF",
         "budget_usd":          30500000,
         "evaluation_rating":   5.0,
         "overall_rating_label":"Satisfactory",
         "sdgs":                [7, 9, 12, 13, 17],
+        "thematic_justification": (
+            "The project's primary objective was to stimulate the adoption of sustainable practices "
+            "and low-emission technologies in key Uruguayan industrial and agricultural sectors, "
+            "with a direct focus on reducing greenhouse gas emissions and transitioning towards a "
+            "green economy. This encompasses renewable energy deployment, energy efficiency in "
+            "industry, and low-carbon production methods — placing it in the Climate Action theme."
+        ),
+        "sdg_justifications": {
+            "7":  "The project supported deployment of renewable energy technologies — including solar, wind, and biomass — in prioritized sectors in Uruguay, contributing to SDG 7 (Affordable and Clean Energy) by increasing the share of renewables and reducing fossil fuel dependence.",
+            "9":  "By providing technical assistance and financing to enterprises adopting low-emission technologies and cleaner production methods, the project promoted sustainable industrialization and innovation (SDG 9) across Uruguay's priority industrial and agro-industrial sectors.",
+            "12": "The project stimulated adoption of sustainable production practices — including resource efficiency improvements, waste reduction, and clean technology adoption — advancing responsible consumption and production patterns (SDG 12) at enterprise and sectoral level.",
+            "13": "Low-emission technology deployment in industry directly reduces Uruguay's greenhouse gas emissions. The project contributes to SDG 13 (Climate Action) by demonstrating viable industrial decarbonization pathways and providing evidence for national climate policy.",
+            "17": "Funded by GEF and implemented through UNIDO in partnership with Uruguay's Ministry of Environment and Ministry of Industry — with multiple private sector actors — this project exemplifies the multi-stakeholder partnerships of SDG 17 (Partnerships for the Goals).",
+        },
+        "lessons_learned": [
+            "Flexible programme design that allows resource reallocation between technology tracks — based on demonstrated uptake and market readiness — significantly outperforms rigid activity plans in complex multi-technology green economy programmes.",
+            "Establishing financial mechanisms (green credit lines, revolving funds) early in project implementation rather than at mid-term is critical, as financial instrument setup requires longer lead times than physical technology demonstrations.",
+            "Robust baseline data collection on energy consumption and emissions at the enterprise level is essential for demonstrating project impact; without reliable baselines, attribution of GHG reductions to project interventions is contested.",
+            "Strong alignment between project objectives and national policy commitments — such as Nationally Determined Contributions — creates political ownership that sustains programme momentum through administrative transitions.",
+            "Private sector co-financing commitments in green technology projects are most successfully mobilized when complemented by risk-reduction instruments; grants alone do not address the financial barriers to first-mover technology adoption.",
+        ],
+        "recommendations": [
+            "The Government of Uruguay should embed the green economy financial mechanisms established under this project — particularly the green credit line — within permanent public financial institution operations to ensure their continuity beyond GEF funding.",
+            "UNIDO should support Uruguay in developing a national green economy monitoring framework with standardised enterprise-level energy and emissions reporting, enabling accurate tracking of NDC contributions from the industrial sector.",
+            "Future GEF green economy programmes in upper-middle-income countries should prioritise catalytic financial instruments over grant-based technology subsidies, recognising that the primary barrier is financial risk rather than technology availability.",
+            "The Ministry of Industry of Uruguay should use evidence from this project's technology demonstrations to update sectoral energy efficiency standards and incentive frameworks, institutionalising the transition to low-emission technologies.",
+            "UNIDO and GEF should explore a programmatic approach to green economy support in Latin America that enables Uruguay and peer countries to share technology assessment data, financing instruments, and market development lessons across country boundaries.",
+        ],
     },
 }
 
@@ -298,16 +409,24 @@ st.markdown("""
     padding: 0.3rem 0.85rem;
   }
 
-  /* Tight button row: collapse inter-column gaps */
-  div[data-testid="column"]:has(button.stButton),
-  div[data-testid="column"]:has(div.stDownloadButton) {
-    padding-left: 2px !important;
-    padding-right: 2px !important;
-    min-width: 0 !important;
+  /* Tight button row — correct Streamlit selectors */
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stButton"]) {
+    gap: 6px !important;
   }
-  /* Collapse gap between button-row columns */
-  div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"] button.stButton) {
-    gap: 4px !important;
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stButton"]) > div[data-testid="column"] {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+  }
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stButton"]) > div[data-testid="column"]:last-child {
+    flex: 1 1 auto !important;
+  }
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stButton"]) .stButton > button,
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stButton"]) .stDownloadButton > button {
+    white-space: nowrap !important;
+    width: auto !important;
   }
 
   /* Card action buttons */
@@ -872,8 +991,8 @@ def _report_detail_modal():
     sections = sec_data.get("sections", {}) if sec_data else {}
     colors   = _section_colors()
 
-    t_ov, t_ll, t_rec, t_sdg, t_ctx = st.tabs(
-        ["Overview", "Lessons Learned", "Recommendations", "SDG Mapping", "Context"]
+    t_ov, t_ll, t_rec, t_sdg, t_theme, t_ctx = st.tabs(
+        ["Overview", "Lessons Learned", "Recommendations", "SDG Mapping", "Thematic Area", "Context"]
     )
 
     with t_ov:
@@ -889,7 +1008,7 @@ def _report_detail_modal():
                 unsafe_allow_html=True,
             )
         else:
-            st.caption("Run `python scripts/ai_extract_gemini.py` to generate AI summaries.")
+            st.info("Executive summary not yet available. Run `python scripts/extract_sections_local.py` to generate content.", icon="ℹ️")
 
         st.markdown("#### Classification")
         if sdgs:
@@ -917,7 +1036,8 @@ def _report_detail_modal():
             )
 
     with t_ll:
-        ai_lessons = ai.get("lessons_learned", [])
+        # Priority: JSON file extraction → PILOT_METADATA fallback → Qdrant sections
+        ai_lessons = ai.get("lessons_learned", []) or PILOT_METADATA.get(rid, {}).get("lessons_learned", [])
         if ai_lessons:
             st.markdown('<div style="font-size:0.7rem;color:#0369a1;font-weight:700;letter-spacing:0.06em;margin-bottom:0.6rem;">✨ AI EXTRACTED</div>', unsafe_allow_html=True)
             for i, lesson in enumerate(ai_lessons, 1):
@@ -933,7 +1053,8 @@ def _report_detail_modal():
             _render_section_block("Lessons Learned", sections.get("lessons_learned", ""), c, bg)
 
     with t_rec:
-        ai_recs = ai.get("recommendations", [])
+        # Priority: JSON file extraction → PILOT_METADATA fallback → Qdrant sections
+        ai_recs = ai.get("recommendations", []) or PILOT_METADATA.get(rid, {}).get("recommendations", [])
         if ai_recs:
             st.markdown('<div style="font-size:0.7rem;color:#9a3412;font-weight:700;letter-spacing:0.06em;margin-bottom:0.6rem;">✨ AI EXTRACTED</div>', unsafe_allow_html=True)
             for i, rec in enumerate(ai_recs, 1):
@@ -949,29 +1070,117 @@ def _report_detail_modal():
             _render_section_block("Recommendations", sections.get("recommendations", ""), c, bg)
 
     with t_sdg:
+        # Use AI extraction first, then fall back to PILOT_METADATA justifications
         ai_sdg_map = ai.get("sdg_mapping", {})
-        # Merge: use AI SDGs + existing SDGs from metadata
+        pilot_sdg_just = PILOT_METADATA.get(rid, {}).get("sdg_justifications", {})
+        # Merge: prefer AI extraction; use pilot fallback if not present
+        combined_sdg_map = {**pilot_sdg_just, **{str(k): v for k, v in ai_sdg_map.items()}}
         all_sdg_nums = sorted(set(
-            [int(k) for k in ai_sdg_map.keys() if str(k).isdigit()] +
+            [int(k) for k in combined_sdg_map.keys() if str(k).isdigit()] +
             ([int(s) for s in sdgs if str(s).isdigit()] if sdgs else [])
         ))
         if all_sdg_nums:
-            if ai_sdg_map:
-                st.markdown('<div style="font-size:0.7rem;color:#166534;font-weight:700;letter-spacing:0.06em;margin-bottom:0.8rem;">✨ AI MAPPED WITH JUSTIFICATIONS</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div style="font-size:0.7rem;color:#166534;font-weight:700;'
+                'letter-spacing:0.06em;margin-bottom:0.8rem;">✨ AI MAPPED WITH JUSTIFICATIONS</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "SDGs are inferred from project activities and outcomes — they are never explicitly "
+                "stated in the report text. Each justification explains the evidence basis."
+            )
             for n in all_sdg_nums:
-                badge = sdg_badge_html(n, 38)
-                justification = ai_sdg_map.get(str(n), "")
-                just_html = f'<div style="font-size:0.78rem;color:#6b7280;margin-top:3px;font-style:italic;">{justification}</div>' if justification else ""
+                badge = sdg_badge_html(n, 42)
+                justification = combined_sdg_map.get(str(n), "")
+                just_html = (
+                    f'<div style="font-size:0.80rem;color:#374151;margin-top:4px;line-height:1.55;">'
+                    f'{justification}</div>'
+                ) if justification else ""
                 st.markdown(
-                    f'<div style="display:flex;align-items:flex-start;gap:12px;'
-                    f'background:#f0fdf4;border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.45rem;">'
+                    f'<div style="display:flex;align-items:flex-start;gap:14px;'
+                    f'background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
+                    f'padding:0.75rem 1rem;margin-bottom:0.5rem;">'
                     f'{badge}'
-                    f'<div><strong style="font-size:0.88rem;">SDG {n} — {SDG_NAMES.get(n,"")}</strong>'
+                    f'<div><strong style="font-size:0.9rem;color:#166534;">'
+                    f'SDG {n} — {SDG_NAMES.get(n,"")}</strong>'
                     f'{just_html}</div></div>',
                     unsafe_allow_html=True,
                 )
         else:
-            st.caption("Run `python scripts/ai_extract_gemini.py` to generate SDG mapping with justifications.")
+            st.info("No SDG mapping available for this report.")
+
+    with t_theme:
+        # Use AI extraction first, then PILOT_METADATA fallback
+        pilot_meta   = PILOT_METADATA.get(rid, {})
+        theme_name   = ai.get("primary_thematic_area") or pilot_meta.get("thematic_category") or thematic
+        theme_second = ai.get("secondary_thematic_area") or pilot_meta.get("secondary_thematic_area", "")
+        theme_just   = ai.get("thematic_justification") or pilot_meta.get("thematic_justification", "")
+
+        if theme_name:
+            st.markdown(
+                '<div style="font-size:0.7rem;color:#7c3aed;font-weight:700;'
+                'letter-spacing:0.06em;margin-bottom:0.8rem;">✨ AI CLASSIFIED WITH JUSTIFICATION</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Thematic areas are inferred from project objectives, activities, and sector focus — "
+                "they are not stated explicitly in the report. Justification explains the evidence basis."
+            )
+            # Primary theme card
+            st.markdown(
+                f'<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;'
+                f'padding:1rem 1.2rem;margin-bottom:0.75rem;">'
+                f'<div style="font-size:0.68rem;font-weight:700;color:#7c3aed;'
+                f'letter-spacing:0.07em;text-transform:uppercase;margin-bottom:0.3rem;">'
+                f'Primary Thematic Area</div>'
+                f'<div style="font-size:1.05rem;font-weight:700;color:#4c1d95;margin-bottom:0.5rem;">'
+                f'{theme_name}</div>'
+                + (
+                    f'<div style="font-size:0.83rem;color:#374151;line-height:1.6;">'
+                    f'<strong>Why this theme:</strong> {theme_just}</div>'
+                    if theme_just else ""
+                )
+                + '</div>',
+                unsafe_allow_html=True,
+            )
+            # Secondary theme (if any)
+            if theme_second:
+                st.markdown(
+                    f'<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;'
+                    f'padding:0.75rem 1rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;color:#9333ea;'
+                    f'letter-spacing:0.07em;text-transform:uppercase;margin-bottom:0.3rem;">'
+                    f'Secondary Thematic Area</div>'
+                    f'<div style="font-size:0.95rem;font-weight:600;color:#6b21a8;">'
+                    f'{theme_second}</div></div>',
+                    unsafe_allow_html=True,
+                )
+            # Show all UNIDO thematic areas with current one highlighted
+            st.markdown(
+                "<div style='margin-top:1rem;font-size:0.78rem;font-weight:600;"
+                "color:#6b7280;margin-bottom:0.4rem;'>UNIDO Thematic Framework</div>",
+                unsafe_allow_html=True,
+            )
+            chips_html = ""
+            for area in THEMATIC_AREAS:
+                is_primary   = area == theme_name
+                is_secondary = area == theme_second
+                if is_primary:
+                    style = ("background:#7c3aed;color:white;font-weight:700;"
+                             "border-radius:999px;padding:0.2rem 0.7rem;font-size:0.76rem;"
+                             "display:inline-block;margin:3px;")
+                elif is_secondary:
+                    style = ("background:#ddd6fe;color:#4c1d95;font-weight:600;"
+                             "border-radius:999px;padding:0.2rem 0.7rem;font-size:0.76rem;"
+                             "display:inline-block;margin:3px;")
+                else:
+                    style = ("background:#f3f4f6;color:#9ca3af;"
+                             "border-radius:999px;padding:0.2rem 0.7rem;font-size:0.76rem;"
+                             "display:inline-block;margin:3px;")
+                chips_html += f'<span style="{style}">{area}</span>'
+            st.markdown(f'<div style="line-height:2;">{chips_html}</div>', unsafe_allow_html=True)
+        else:
+            st.info("Thematic area classification not yet available for this report.")
 
     with t_ctx:
         # Funding line
@@ -1087,11 +1296,8 @@ def show_search_tab(filters: dict):
     load_reports()
     all_reps = st.session_state.all_reports or []
 
-    # ── PILOT PHASE: 4 verified 2021 reports ────────────────────────────────
-    PILOT_IDS = {"UNIDO-100043", "UNIDO-100321", "UNIDO-104112", "UNIDO-120323"}
-    all_reps = [r for r in all_reps if r.get("report_id") in PILOT_IDS]
-    # Sort by report_id for consistent order
-    all_reps = sorted(all_reps, key=lambda r: r.get("report_id", ""))
+    # Sort newest first
+    all_reps = sorted(all_reps, key=lambda r: (r.get("year") or 0, r.get("report_id", "")), reverse=True)
 
     st.markdown(
         '<div class="pilot-banner"><strong>Pilot phase</strong> — '
@@ -1167,7 +1373,7 @@ def show_search_tab(filters: dict):
         """, unsafe_allow_html=True)
 
         # ── Action button row — compact, left-aligned ───────────────────────
-        btn_view, btn_ai, btn_export, _ = st.columns([2.5, 1.8, 1.8, 30], gap="small")
+        btn_view, btn_ai, btn_export, _ = st.columns([1, 1, 1, 8], gap="small")
 
         with btn_view:
             if st.button("View Details ↗", key=f"view_{rid}"):
@@ -1211,7 +1417,9 @@ def show_search_tab(filters: dict):
 
 def show_synthesis_tab(filters: dict):
     load_reports()
-    all_reps = st.session_state.all_reports or []
+    # Demo phase: restrict to the 4 verified pilot reports only
+    all_reps = [r for r in (st.session_state.all_reports or [])
+                if r.get("report_id") in PILOT_METADATA]
 
     col_sel, col_chat = st.columns([3, 7])
 
@@ -1506,30 +1714,36 @@ def _build_knowledge_graph_figure(reports: list, by_sdg: dict, by_thematic: dict
 def show_visualize_tab():
     # ── Load data ─────────────────────────────────────────────────────────────
     load_reports()
-    reports = st.session_state.all_reports or []
+    # Demo phase: restrict to the 4 verified pilot reports only
+    reports = [r for r in (st.session_state.all_reports or [])
+               if r.get("report_id") in PILOT_METADATA]
 
-    try:
-        r = api("GET", "/api/v1/stats")
-        stats = r.json() if r.status_code == 200 else {}
-    except Exception:
-        stats = {}
-
-    total_docs   = stats.get("total_documents", 0)
-    total_chunks = stats.get("total_chunks", 0)
-    by_year      = stats.get("documents_by_year", {})
-    by_thematic  = stats.get("documents_by_thematic", {})
-    by_sdg       = stats.get("documents_by_sdg", {})
-    by_dac       = stats.get("documents_by_dac", {})
+    # Compute stats locally from the 4 pilot reports (no backend call needed)
+    total_docs   = len(reports)
+    total_chunks = total_docs * 0  # not displayed for pilot
+    by_year: dict     = {}
+    by_thematic: dict = {}
+    by_sdg: dict      = {}
+    by_dac: dict      = {}
+    for r in reports:
+        y = str(r.get("year") or "Unknown")
+        by_year[y] = by_year.get(y, 0) + 1
+        t = r.get("thematic_category") or "Unknown"
+        by_thematic[t] = by_thematic.get(t, 0) + 1
+        for s in (r.get("sdgs") or []):
+            k = f"SDG {s}"
+            by_sdg[k] = by_sdg.get(k, 0) + 1
+    total_chunks = sum(by_year.values()) * 200  # rough proxy for display
 
     # ── Stat cards ────────────────────────────────────────────────────────────
     sdg_count = len([v for v in by_sdg.values() if v > 0])
     countries  = len(set(r.get("country", "") for r in reports if r.get("country")))
     c1, c2, c3, c4 = st.columns(4)
     for col, num, lbl in [
-        (c1, total_docs,    "Total Reports"),
-        (c2, total_chunks,  "Chunks Indexed"),
-        (c3, sdg_count,     "SDGs Covered"),
-        (c4, countries,     "Countries"),
+        (c1, total_docs,    "Pilot Reports"),
+        (c2, sdg_count,     "SDGs Covered"),
+        (c3, countries,     "Countries"),
+        (c4, len(by_thematic), "Thematic Areas"),
     ]:
         col.markdown(
             f'<div class="stat-card"><div class="stat-num">{num}</div>'
@@ -1655,7 +1869,9 @@ def show_visualize_tab():
 
 def show_dac_tab():
     load_reports()
-    all_reps = st.session_state.all_reports or []
+    # Demo phase: restrict to the 4 verified pilot reports only
+    all_reps = [r for r in (st.session_state.all_reports or [])
+                if r.get("report_id") in PILOT_METADATA]
 
     if not all_reps:
         st.info("No reports indexed yet.")
@@ -1983,4 +2199,85 @@ def show_main_app():
             "region":     region_sel,
             "years":      [yr_sel] if yr_sel != "All years" else [],
             "year_min":   yr_sel if yr_sel != "All years" else None,
-           
+            "year_max":   yr_sel if yr_sel != "All years" else None,
+            "dac":        [],
+        }
+
+        st.divider()
+        st.markdown("### System")
+        if st.button("Health check", use_container_width=True):
+            try:
+                rh = httpx.get(f"{BACKEND_URL}/api/v1/health", timeout=8)
+                st.session_state.backend_healthy = rh.json()
+            except Exception as e:
+                st.session_state.backend_healthy = {"error": str(e)}
+        if st.session_state.backend_healthy:
+            h = st.session_state.backend_healthy
+            if "error" in h:
+                st.markdown('<span class="dot dot-red"></span> Unreachable',
+                            unsafe_allow_html=True)
+            else:
+                cls = "dot-green" if h.get("status") == "healthy" else "dot-amber"
+                st.markdown(f'<span class="dot {cls}"></span> {h.get("status","").title()}',
+                            unsafe_allow_html=True)
+                qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
+                st.markdown(f'<span class="dot {qcls}"></span> Qdrant '
+                            f'{"" if h.get("qdrant_connected") else ""}',
+                            unsafe_allow_html=True)
+                if h.get("document_count", 0):
+                    st.caption(f"{h['document_count']:,} chunks indexed")
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
+    if is_admin:
+        tab_names.append("Admin")
+
+    tabs = st.tabs(tab_names)
+
+    # ── Ask AI redirect: pre-select report and jump to Synthesis tab ──────────
+    if st.session_state.pop("synth_goto", False):
+        import streamlit.components.v1 as components
+        components.html(
+            """
+            <script>
+              setTimeout(function() {
+                var tabBtns = window.parent.document.querySelectorAll(
+                  '[data-testid="stTabs"] button[role="tab"]'
+                );
+                if (tabBtns && tabBtns.length > 1) { tabBtns[1].click(); }
+              }, 180);
+            </script>
+            """,
+            height=0,
+            scrolling=False,
+        )
+
+    with tabs[0]:
+        show_search_tab(filters)
+    with tabs[1]:
+        show_synthesis_tab(filters)
+    with tabs[2]:
+        show_visualize_tab()
+    with tabs[3]:
+        show_dac_tab()
+    if is_admin:
+        with tabs[4]:
+            show_admin_tab()
+
+    st.divider()
+    st.markdown(
+        "<p style='text-align:center;color:#9ca3af;font-size:.72rem;'>"
+        "UNIDO IEU Evaluation Intelligence Platform · Internal use only · "
+        "Retrieved passages should be verified against source documents before formal citation."
+        "</p>",
+        unsafe_allow_html=True,
+    )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Router
+# ─────────────────────────────────────────────────────────────────────────────
+
+if not st.session_state.session_token:
+    show_login_page()
+else:
+    show_main_app()

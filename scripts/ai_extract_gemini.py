@@ -1,58 +1,59 @@
 """
-One-time extraction script: reads 4 UNIDO pilot PDFs, calls Gemini 1.5 Flash,
+Extraction script: reads ALL UNIDO PDFs across 2021–2025, calls Gemini 2.0 Flash,
 saves structured JSON to data/ai_extractions/<report_id>.json
 
 Usage:
     cd eio-rag
-    pip install google-generativeai pdfplumber
-    export GEMINI_API_KEY="your-key-here"
+    pip install google-genai pdfplumber python-dotenv
+    # Add GEMINI_API_KEY=your-key to eio-rag/.env
     python scripts/ai_extract_gemini.py
 
+    # To re-run only missing reports (skip already extracted):
+    python scripts/ai_extract_gemini.py --skip-existing
+
+    # To run a single report:
+    python scripts/ai_extract_gemini.py --only UNIDO-100043
+
 Get a free key at: https://aistudio.google.com/apikey
-Free tier: 1,500 requests/day, 1M tokens/min — more than enough for 4 reports.
 """
 
 import os
+import sys
 import json
 import time
+import yaml
 import pdfplumber
-import google.generativeai as genai
+from google import genai
+from google.genai import types
+
+# Load .env from the eio-rag/ root
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    load_dotenv(_env_path)
+except ImportError:
+    pass
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-MODEL_NAME = "gemini-1.5-flash"
-MAX_WORDS = 40000          # truncate very long PDFs to save tokens
-RETRY_DELAY = 10           # seconds to wait if rate-limited
+MODEL_NAME     = "gemini-2.0-flash"
+MAX_WORDS      = 35000
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PDF_DIR  = os.path.join(BASE_DIR, "data", "pdfs", "2021")
-OUT_DIR  = os.path.join(BASE_DIR, "data", "ai_extractions")
-
-# Report ID → PDF filename mapping
-REPORTS = {
-    "UNIDO-100043": "GFSRL-100043_TE_Report_2020_E.pdf.pdf",
-    "UNIDO-100321": "EvalRep_AZE-100321_HCFC_Phase_out_TE-2021.pdf",
-    "UNIDO-104112": "EvalRep_UKR-104112_RECP_TE-2020.pdf",
-    "UNIDO-120323": "GF_ID-4890_GFURU-120323_TE_Report_2020_E.pdf.pdf",
-}
+BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PDF_BASE  = os.path.join(BASE_DIR, "data", "pdfs")
+OUT_DIR   = os.path.join(BASE_DIR, "data", "ai_extractions")
+META_FILE = os.path.join(BASE_DIR, "data", "metadata.yaml")
 
 THEMATIC_AREAS = [
-    "Energy Efficiency",
-    "Clean / Renewable Energy",
-    "Climate Action",
-    "Circular Economy / Waste Management",
-    "Chemicals & POPs",
-    "Industrial Policy & Competitiveness",
-    "Trade & Standards",
-    "Agro-Industry & Food Systems",
-    "Water & Environment",
-    "Gender & Inclusion",
-    "Digital Innovation",
+    "Energy Efficiency", "Clean / Renewable Energy", "Climate Action",
+    "Circular Economy / Waste Management", "Chemicals & POPs",
+    "Industrial Policy & Competitiveness", "Trade & Standards",
+    "Agro-Industry & Food Systems", "Water & Environment",
+    "Gender & Inclusion", "Digital Innovation",
 ]
 
-EXTRACTION_PROMPT = """
-You are a senior evaluation analyst at UNIDO's Independent Evaluation Unit.
+EXTRACTION_PROMPT = """You are a senior evaluation analyst at UNIDO's Independent Evaluation Unit.
 Carefully read the evaluation report text below and extract structured information.
 
 Return ONLY a valid JSON object — no markdown fences, no explanation, nothing before or after the JSON.
@@ -90,7 +91,7 @@ RETURN THIS EXACT JSON STRUCTURE:
   "thematic_justification": "One sentence citing specific project activities that justify this classification.",
   "context": {{
     "title": "Full official report title",
-    "year": 2021,
+    "year": null,
     "country": "Country name(s)",
     "region": "Africa | Asia | Europe | Latin America | Middle East | Global",
     "report_type": "Project Evaluation",
@@ -102,15 +103,32 @@ RETURN THIS EXACT JSON STRUCTURE:
 }}
 
 REPORT TEXT:
-{text}
-"""
+{text}"""
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
+def load_all_reports() -> list[dict]:
+    """Load all reports from metadata.yaml."""
+    with open(META_FILE, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return data.get("reports", [])
+
+
+def find_pdf(filename: str) -> str | None:
+    """Resolve a relative filename from metadata.yaml to an absolute path."""
+    path = os.path.join(PDF_BASE, filename)
+    if os.path.exists(path):
+        return path
+    # Try without the year subfolder
+    basename = os.path.basename(filename)
+    for root, _, files in os.walk(PDF_BASE):
+        if basename in files:
+            return os.path.join(root, basename)
+    return None
+
+
 def extract_text(pdf_path: str) -> tuple[str, int, int]:
-    """Extract text from PDF, return (text, pages, words)."""
-    pages = 0
-    all_text = []
+    pages, all_text = 0, []
     with pdfplumber.open(pdf_path) as pdf:
         pages = len(pdf.pages)
         for page in pdf.pages:
@@ -125,67 +143,67 @@ def extract_text(pdf_path: str) -> tuple[str, int, int]:
     return full_text, pages, len(words)
 
 
-def call_gemini(model, prompt: str, report_id: str, attempt: int = 1) -> dict:
-    """Call Gemini and return parsed JSON. Retries once on failure."""
+def call_gemini(client, prompt: str, attempt: int = 1) -> dict:
+    import re as _re
     print(f"  🤖 Calling Gemini (attempt {attempt})...")
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
-            temperature=0.0,
-            max_output_tokens=4096,
-        ),
-    )
-    raw = response.text.strip()
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                max_output_tokens=4096,
+            ),
+        )
+        raw = response.text.strip()
+    except Exception as e:
+        err_str = str(e)
+        delay_match = _re.search(r'retry in (\d+)', err_str, _re.IGNORECASE)
+        if delay_match and attempt <= 5:
+            wait = int(delay_match.group(1)) + 5
+            print(f"  ⏳ Rate limited — waiting {wait}s then retrying...")
+            time.sleep(wait)
+            return call_gemini(client, prompt, attempt + 1)
+        raise
 
-    # Strip markdown fences if Gemini added them anyway
     if raw.startswith("```"):
-        raw = raw.split("```", 2)[-1]  # take content after opening fence
+        raw = raw.split("```", 2)[-1]
         if raw.startswith("json"):
             raw = raw[4:]
-        # remove closing fence if present
         if "```" in raw:
             raw = raw[:raw.rfind("```")]
         raw = raw.strip()
 
     try:
-        data = json.loads(raw)
-        return data
+        return json.loads(raw)
     except json.JSONDecodeError as e:
-        if attempt == 1:
-            print(f"  ⚠️  JSON parse failed ({e}), retrying with stricter prompt...")
-            stricter = prompt + "\n\nIMPORTANT: Your previous response could not be parsed as JSON. Return ONLY raw JSON, starting with {{ and ending with }}. No other text."
+        if attempt <= 2:
+            print(f"  ⚠️  JSON parse failed, retrying...")
             time.sleep(3)
-            return call_gemini(model, stricter, report_id, attempt=2)
-        raise ValueError(f"Gemini returned unparseable JSON after 2 attempts.\nRaw output:\n{raw[:500]}")
+            return call_gemini(client, prompt + "\n\nReturn ONLY raw JSON starting with { and ending with }.", attempt + 1)
+        raise ValueError(f"Could not parse JSON.\nRaw:\n{raw[:500]}")
 
 
-def process_report(model, report_id: str, pdf_filename: str) -> dict:
-    pdf_path = os.path.join(PDF_DIR, pdf_filename)
-    out_path = os.path.join(OUT_DIR, f"{report_id}.json")
+def process_report(client, report_meta: dict) -> dict:
+    rid      = report_meta["report_id"]
+    filename = report_meta.get("filename", "")
+    out_path = os.path.join(OUT_DIR, f"{rid}.json")
 
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+    pdf_path = find_pdf(filename)
+    if not pdf_path:
+        raise FileNotFoundError(f"PDF not found: {filename}")
 
-    print(f"\n{'='*60}")
-    print(f"Processing {report_id}")
-    print(f"PDF: {pdf_filename}")
-
-    # Extract text
     print("  📄 Extracting PDF text...")
     text, pages, words = extract_text(pdf_path)
     print(f"  ✅ {pages} pages, {words:,} words extracted")
 
-    # Build prompt
     prompt = EXTRACTION_PROMPT.format(
         thematic_areas="\n".join(f"  - {t}" for t in THEMATIC_AREAS),
-        report_id=report_id,
+        report_id=rid,
         text=text,
     )
 
-    # Call Gemini
-    data = call_gemini(model, prompt, report_id)
-
-    # Add extraction metadata
+    data = call_gemini(client, prompt)
     data["_extraction_meta"] = {
         "extracted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "model": MODEL_NAME,
@@ -193,7 +211,6 @@ def process_report(model, report_id: str, pdf_filename: str) -> dict:
         "pdf_words_processed": min(words, MAX_WORDS),
     }
 
-    # Save
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -205,61 +222,65 @@ def process_report(model, report_id: str, pdf_filename: str) -> dict:
 # ── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
+    skip_existing = "--skip-existing" in sys.argv
+    only_id = None
+    if "--only" in sys.argv:
+        idx = sys.argv.index("--only")
+        only_id = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else None
+
     if not GEMINI_API_KEY:
-        print("❌ GEMINI_API_KEY is not set.")
-        print("   Get a free key at: https://aistudio.google.com/apikey")
-        print("   Then run:  export GEMINI_API_KEY='your-key-here'")
+        print("❌ GEMINI_API_KEY not set. Add it to eio-rag/.env")
         return
 
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(MODEL_NAME)
+    client  = genai.Client(api_key=GEMINI_API_KEY)
+    reports = load_all_reports()
+
+    if only_id:
+        reports = [r for r in reports if r["report_id"] == only_id]
+        if not reports:
+            print(f"❌ Report ID '{only_id}' not found in metadata.yaml")
+            return
+
+    if skip_existing:
+        before = len(reports)
+        reports = [r for r in reports
+                   if not os.path.exists(os.path.join(OUT_DIR, f"{r['report_id']}.json"))]
+        print(f"⏭️  Skipping {before - len(reports)} already-extracted reports")
+
     print(f"✅ Gemini configured ({MODEL_NAME})")
-    print(f"📂 PDFs from: {PDF_DIR}")
-    print(f"📂 Output to: {OUT_DIR}")
+    print(f"📂 PDFs: {PDF_BASE}")
+    print(f"📂 Output: {OUT_DIR}")
+    print(f"📋 Reports to process: {len(reports)}")
 
-    results = {}
-    errors  = {}
+    results, errors = {}, {}
 
-    for i, (report_id, pdf_filename) in enumerate(REPORTS.items()):
+    for i, rep_meta in enumerate(reports):
+        rid = rep_meta["report_id"]
+        title = rep_meta.get("short_title") or rep_meta.get("title", "")[:50]
+        print(f"\n{'='*60}")
+        print(f"[{i+1}/{len(reports)}] {rid} — {title}")
+
         try:
-            data = process_report(model, report_id, pdf_filename)
-            results[report_id] = "✅ OK"
-
-            # Print a quick preview
-            summary = data.get("executive_summary", "")
-            print(f"  📝 Summary preview: {summary[:150]}...")
-            lessons = data.get("lessons_learned", [])
-            print(f"  📚 {len(lessons)} lessons learned")
-            recs = data.get("recommendations", [])
-            print(f"  📋 {len(recs)} recommendations")
-            sdgs = list(data.get("sdg_mapping", {}).keys())
-            print(f"  🎯 SDGs: {', '.join(sdgs) if sdgs else 'none'}")
-            print(f"  🏷️  Theme: {data.get('primary_thematic_area', 'unknown')}")
-
+            data = process_report(client, rep_meta)
+            results[rid] = "✅ OK"
+            print(f"  📚 {len(data.get('lessons_learned', []))} lessons  |  "
+                  f"📋 {len(data.get('recommendations', []))} recs  |  "
+                  f"🎯 SDGs: {', '.join(data.get('sdg_mapping', {}).keys())}  |  "
+                  f"🏷️  {data.get('primary_thematic_area', '?')}")
         except Exception as e:
-            errors[report_id] = str(e)
+            errors[rid] = str(e)
             print(f"  ❌ FAILED: {e}")
 
-        # Polite pause between requests (avoid rate limits)
-        if i < len(REPORTS) - 1:
-            print(f"  ⏳ Waiting 5 seconds before next report...")
+        if i < len(reports) - 1:
+            print("  ⏳ Waiting 5s...")
             time.sleep(5)
 
-    # Summary
     print(f"\n{'='*60}")
-    print("EXTRACTION COMPLETE")
-    print(f"{'='*60}")
-    for rid, status in results.items():
-        print(f"  {status}  {rid}")
+    print(f"DONE  ✅ {len(results)} succeeded  ❌ {len(errors)} failed")
     for rid, err in errors.items():
-        print(f"  ❌ FAILED  {rid}: {err}")
-
-    if errors:
-        print(f"\n⚠️  {len(errors)} report(s) failed. Fix errors above and re-run.")
-    else:
-        print(f"\n🎉 All {len(results)} reports extracted successfully!")
-        print(f"   JSON files are in: {OUT_DIR}")
-        print(f"   Reload the Streamlit app to see the updated View Details content.")
+        print(f"  ❌ {rid}: {err[:100]}")
+    if not errors:
+        print("🎉 All reports extracted! Refresh the app to see AI content.")
 
 
 if __name__ == "__main__":

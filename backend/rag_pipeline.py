@@ -90,9 +90,41 @@ def create_text_index() -> None:
 # Search
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Evaluation-domain query expansion ────────────────────────────────────────
+# Maps short/ambiguous terms to richer evaluation vocabulary so that
+# the embedding space captures domain-specific meaning more accurately.
+_EXPANSION_MAP: dict[str, str] = {
+    "lessons":          "lessons learned key findings evaluation evidence",
+    "recommendations":  "recommendations actions proposed should must actor",
+    "sustainability":   "sustainability long-term impact ownership exit strategy financial",
+    "gender":           "gender equality women inclusion social equity",
+    "impact":           "impact outcomes results changes beneficiaries development effectiveness",
+    "efficiency":       "efficiency cost-effectiveness budget resource utilisation",
+    "effectiveness":    "effectiveness achievement objectives results delivery",
+    "coherence":        "coherence alignment policies national priorities coordination",
+    "relevance":        "relevance needs priorities beneficiaries context design",
+    "clean energy":     "clean energy renewable solar wind geothermal biomass electrification",
+    "climate":          "climate change mitigation adaptation GHG emissions reduction carbon",
+    "chemicals":        "chemicals POPs PCB hazardous waste stockholm convention",
+    "energy efficiency":"energy efficiency industrial EE management systems ISO 50001",
+}
+
+def expand_query(query: str) -> str:
+    """Append domain-specific expansion terms to the query where applicable."""
+    lower = query.lower()
+    additions = []
+    for trigger, expansion in _EXPANSION_MAP.items():
+        if trigger in lower and expansion not in lower:
+            additions.append(expansion)
+    if additions:
+        return query + " " + " ".join(additions)
+    return query
+
+
 def embed_query(query: str) -> list[float]:
     model = get_embed_model()
-    vector = model.encode(query, normalize_embeddings=True)
+    expanded = expand_query(query)
+    vector = model.encode(expanded, normalize_embeddings=True)
     return vector.tolist()
 
 
@@ -197,7 +229,11 @@ def run_query(query: str, filters: QueryFilters) -> tuple[list[SourceCitation], 
     query_id = str(uuid.uuid4())
     t0 = time.time()
 
-    # Vector search
+    expanded_query = expand_query(query)
+    if expanded_query != query:
+        logger.info(f"Query expanded: '{query}' → '{expanded_query[:120]}'")
+
+    # Vector search (uses expanded query internally via embed_query)
     vector_candidates = search(query, filters)
 
     # Keyword search (may return empty if text index not yet created)
