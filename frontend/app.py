@@ -1374,11 +1374,11 @@ def show_search_tab(filters: dict):
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Action button row — compact, left-aligned ───────────────────────
-        btn_view, btn_ai, btn_export = st.columns([2, 2, 2], gap="small")
+        # ── Action button row — tight group on the left ─────────────────────
+        btn_view, btn_ai, btn_export, _spacer = st.columns([1.4, 1, 1, 6], gap="small")
 
         with btn_view:
-            if st.button("View Details ↗", key=f"view_{rid}"):
+            if st.button("View Details ↗", key=f"view_{rid}", use_container_width=True):
                 with st.spinner("Loading…"):
                     sec_data = load_sections(rid)
                 st.session_state["modal_rep"] = rep
@@ -1386,7 +1386,7 @@ def show_search_tab(filters: dict):
                 _report_detail_modal()
 
         with btn_ai:
-            if st.button("Ask AI", key=f"askai_{rid}", type="primary"):
+            if st.button("Ask AI", key=f"askai_{rid}", type="primary", use_container_width=True):
                 st.session_state["synth_sel"] = [rid]
                 st.session_state["synth_goto"] = True
                 st.rerun()
@@ -1394,18 +1394,19 @@ def show_search_tab(filters: dict):
         with btn_export:
             exp_key = f"export_bytes_{rid}"
             if not st.session_state.get(exp_key):
-                if st.button("Export", key=f"exp_{rid}"):
+                if st.button("Export", key=f"exp_{rid}", use_container_width=True):
                     with st.spinner("Preparing Excel…"):
                         sec_e = load_sections(rid)
                     st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
                     st.rerun()
             else:
                 st.download_button(
-                    label="Download Excel",
+                    label="⬇ Excel",
                     data=st.session_state[exp_key],
                     file_name=f"UNIDO_{rid}_Evaluation.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"dl_{rid}",
+                    use_container_width=True,
                 )
 
         st.markdown(
