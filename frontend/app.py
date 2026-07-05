@@ -123,7 +123,7 @@ THEMATIC_AREAS = [
 # ── Pilot report metadata (source of truth — overrides backend/Qdrant) ───────
 PILOT_METADATA: dict[str, dict] = {
     "UNIDO-100043": {
-        "title":               'Independent Terminal Evaluation: "Bamboo Processing for Sri Lanka"',
+        "title":               "Independent Terminal Evaluation: The Project \"Bamboo Processing for Sri Lanka\"",
         "year":                2021,
         "country":             "Sri Lanka",
         "region":              "Asia and the Pacific",
@@ -203,7 +203,7 @@ PILOT_METADATA: dict[str, dict] = {
         ],
     },
     "UNIDO-104112": {
-        "title":               "Independent Terminal Evaluation: Promoting the Adaptation and Adoption of RECP Through the Establishment and Operation of a Cleaner Production Centre (CPC) in Ukraine",
+        "title":               "Independent Terminal Evaluation: Promoting the Adaptation and Adoption of RECP (Resource Efficient and Cleaner Production) Through the Establishment and Operation of a Cleaner Production Centre (CPC) in Ukraine",
         "year":                2021,
         "country":             "Ukraine",
         "region":              "Europe and Central Asia",
@@ -244,7 +244,7 @@ PILOT_METADATA: dict[str, dict] = {
         ],
     },
     "UNIDO-120323": {
-        "title":               "Independent Terminal Evaluation: Towards a Green Economy in Uruguay — Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors",
+        "title":               "Independent Terminal Evaluation: Towards a Green Economy in Uruguay: Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors",
         "year":                2021,
         "country":             "Uruguay",
         "region":              "Latin America",
@@ -1294,7 +1294,9 @@ def _render_section_block(label: str, text: str, color: str, bg: str):
 
 def show_search_tab(filters: dict):
     load_reports()
-    all_reps = st.session_state.all_reports or []
+    # Demo phase: restrict to the 4 verified pilot reports only
+    all_reps = [r for r in (st.session_state.all_reports or [])
+                if r.get("report_id") in PILOT_METADATA]
 
     # Sort newest first
     all_reps = sorted(all_reps, key=lambda r: (r.get("year") or 0, r.get("report_id", "")), reverse=True)
@@ -1373,7 +1375,7 @@ def show_search_tab(filters: dict):
         """, unsafe_allow_html=True)
 
         # ── Action button row — compact, left-aligned ───────────────────────
-        btn_view, btn_ai, btn_export, _ = st.columns([1, 1, 1, 8], gap="small")
+        btn_view, btn_ai, btn_export = st.columns([2, 2, 2], gap="small")
 
         with btn_view:
             if st.button("View Details ↗", key=f"view_{rid}"):
