@@ -330,11 +330,14 @@ st.markdown("""
   /* Report cards */
   .report-card {
     background: white; border: 1px solid var(--border);
-    border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 0.6rem;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-left: 4px solid var(--blue);
+    border-radius: 10px; padding: 1.1rem 1.3rem; margin-bottom: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    border-top: 3px solid var(--blue);
+    transition: box-shadow 0.15s ease;
   }
-  .report-title { font-weight: 700; color: var(--dark); font-size: 0.95rem; line-height:1.4; margin-bottom:0.2rem; }
-  .report-meta  { color: var(--muted); font-size: 0.78rem; margin: 0.15rem 0 0.4rem; }
+  .report-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+  .report-title { font-weight: 700; color: var(--dark); font-size: 0.92rem; line-height:1.45; margin-bottom:0.3rem; }
+  .report-meta  { color: var(--muted); font-size: 0.76rem; margin: 0.1rem 0 0.35rem; }
   .tag {
     display: inline-block; border-radius: 999px; font-size: 0.72rem;
     font-weight: 600; padding: 0.15rem 0.55rem; margin: 2px;
@@ -1304,8 +1307,6 @@ def show_search_tab(filters: dict):
     # Demo phase: restrict to the 4 verified pilot reports only
     all_reps = [r for r in (st.session_state.all_reports or [])
                 if r.get("report_id") in PILOT_METADATA]
-
-    # Sort newest first
     all_reps = sorted(all_reps, key=lambda r: (r.get("year") or 0, r.get("report_id", "")), reverse=True)
 
     st.markdown(
@@ -1326,102 +1327,96 @@ def show_search_tab(filters: dict):
     if filters["region"]:
         filtered = [r for r in filtered if r.get("region") in filters["region"]]
 
-    # ── Controls row ─────────────────────────────────────────────────────────
-    col_count, col_refresh = st.columns([5, 1])
-    with col_count:
-        if len(all_reps) == 0:
-            st.info("No reports loaded yet. Check backend connection.")
-        else:
-            st.markdown(f"**{len(filtered)}** of **{len(all_reps)}** reports")
-    with col_refresh:
-        if st.button("Refresh", use_container_width=True, help="Refresh report list"):
-            load_reports(force=True)
-            st.rerun()
-
+    if len(all_reps) == 0:
+        st.info("No reports loaded. Check backend connection.")
+        return
+    st.markdown(
+        f'<div style="font-size:0.82rem;color:#6b7280;margin-bottom:0.8rem;">'
+        f'Showing <strong>{len(filtered)}</strong> of <strong>{len(all_reps)}</strong> reports</div>',
+        unsafe_allow_html=True,
+    )
     if not filtered:
         return
 
-    colors = _section_colors()
+    # ── 2-column card grid ───────────────────────────────────────────────────
+    for row_start in range(0, len(filtered), 2):
+        pair = filtered[row_start : row_start + 2]
+        grid_cols = st.columns(len(pair), gap="large")
 
-    # ── Report cards ─────────────────────────────────────────────────────────
-    for rep in filtered:
-        title    = rep.get("title") or rep.get("short_title") or "Untitled Report"
-        year     = rep.get("year", "")
-        country  = rep.get("country", "")
-        region   = rep.get("region", "")
-        thematic = rep.get("thematic_category", "")
-        rtype    = rep.get("report_type", "")
-        donor    = rep.get("donor", "")
-        sdgs     = rep.get("sdgs") or []
-        rid      = rep.get("report_id", "")
-        rating   = rep.get("evaluation_rating")
-        budget   = rep.get("budget_usd")
+        for col, rep in zip(grid_cols, pair):
+            title    = rep.get("title") or "Untitled Report"
+            year     = rep.get("year", "")
+            country  = rep.get("country", "")
+            region   = rep.get("region", "")
+            thematic = rep.get("thematic_category", "")
+            rtype    = rep.get("report_type", "")
+            donor    = rep.get("donor", "")
+            sdgs     = rep.get("sdgs") or []
+            rid      = rep.get("report_id", "")
+            rating   = rep.get("evaluation_rating")
+            budget   = rep.get("budget_usd")
 
-        badges_html    = sdg_badges_row(sdgs, 26)
-        rating_html    = _rating_badge(rating)
-        thematic_badge = f'<span class="tag tag-blue">{thematic}</span>' if thematic else ""
-        rtype_badge    = f'<span class="tag tag-gray">{rtype.title()}</span>' if rtype else ""
-        donor_badge    = f'<span class="tag tag-green">{donor}</span>' if donor else ""
-        budget_str     = (f'<span class="tag tag-purple">USD {budget/1e6:.1f}M</span>'
-                         if budget and budget >= 1e5 else "")
+            badges_html    = sdg_badges_row(sdgs, 28)
+            rating_html    = _rating_badge(rating)
+            thematic_badge = f'<span class="tag tag-blue">{thematic}</span>' if thematic else ""
+            rtype_badge    = f'<span class="tag tag-gray">{rtype}</span>' if rtype else ""
+            donor_badge    = f'<span class="tag tag-green">{donor}</span>' if donor else ""
+            budget_str     = (f'<span class="tag tag-purple">USD {budget/1e6:.1f}M</span>'
+                             if budget and budget >= 1e5 else "")
 
-        meta_parts = [str(year)] if year else []
-        if country: meta_parts.append(country)
-        if region and region != country: meta_parts.append(region)
-        meta_line = " · ".join(meta_parts)
+            meta_parts = [str(year)] if year else []
+            if country: meta_parts.append(country)
+            if region and region != country: meta_parts.append(region)
+            meta_line = " · ".join(meta_parts)
 
-        st.markdown(f"""
-        <div class="report-card">
-          <div class="report-title">{title}</div>
-          <div class="report-meta">{meta_line}</div>
-          <div style="margin:0.35rem 0 0.2rem;">
-            {rating_html}{thematic_badge}{rtype_badge}{donor_badge}{budget_str}
-          </div>
-          <div style="margin-top:0.4rem;">{badges_html}</div>
-        </div>
-        """, unsafe_allow_html=True)
+            with col:
+                st.markdown(f"""
+                <div class="report-card" style="height:100%;min-height:160px;">
+                  <div style="font-size:0.68rem;font-weight:700;color:#009EDB;
+                              letter-spacing:0.06em;text-transform:uppercase;
+                              margin-bottom:0.4rem;">{meta_line}</div>
+                  <div class="report-title" style="font-size:0.9rem;line-height:1.45;
+                              margin-bottom:0.5rem;">{title}</div>
+                  <div style="margin:0.3rem 0 0.4rem;display:flex;flex-wrap:wrap;gap:3px;">
+                    {rating_html}{thematic_badge}{rtype_badge}{donor_badge}{budget_str}
+                  </div>
+                  <div style="margin-top:0.35rem;">{badges_html}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-        # ── Action buttons — nested columns so they hug left at fixed width ───
-        _btn_col, _ = st.columns([3, 7])
-        with _btn_col:
-            btn_view, btn_ai, btn_export = st.columns(3, gap="small")
-
-            with btn_view:
-                if st.button("View Details ↗", key=f"view_{rid}", use_container_width=True):
-                    with st.spinner("Loading…"):
-                        sec_data = load_sections(rid)
-                    st.session_state["modal_rep"] = rep
-                    st.session_state["modal_sec"] = sec_data
-                    _report_detail_modal()
-
-            with btn_ai:
-                if st.button("Ask AI", key=f"askai_{rid}", type="primary", use_container_width=True):
-                    st.session_state["synth_sel"] = [rid]
-                    st.session_state["synth_goto"] = True
-                    st.rerun()
-
-            with btn_export:
-                exp_key = f"export_bytes_{rid}"
-                if not st.session_state.get(exp_key):
-                    if st.button("Export", key=f"exp_{rid}", use_container_width=True):
-                        with st.spinner("Preparing Excel…"):
-                            sec_e = load_sections(rid)
-                        st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
+                # ── Action buttons — 3 equal columns, full width of card ───
+                b_view, b_ai, b_exp = st.columns(3, gap="small")
+                with b_view:
+                    if st.button("View Details ↗", key=f"view_{rid}", use_container_width=True):
+                        with st.spinner("Loading…"):
+                            sec_data = load_sections(rid)
+                        st.session_state["modal_rep"] = rep
+                        st.session_state["modal_sec"] = sec_data
+                        _report_detail_modal()
+                with b_ai:
+                    if st.button("Ask AI", key=f"askai_{rid}", type="primary", use_container_width=True):
+                        st.session_state["synth_sel"] = [rid]
+                        st.session_state["synth_goto"] = True
                         st.rerun()
-                else:
-                    st.download_button(
-                        label="⬇ Excel",
-                        data=st.session_state[exp_key],
-                        file_name=f"UNIDO_{rid}_Evaluation.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"dl_{rid}",
-                        use_container_width=True,
-                    )
+                with b_exp:
+                    exp_key = f"export_bytes_{rid}"
+                    if not st.session_state.get(exp_key):
+                        if st.button("Export", key=f"exp_{rid}", use_container_width=True):
+                            with st.spinner("Preparing Excel…"):
+                                sec_e = load_sections(rid)
+                            st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
+                            st.rerun()
+                    else:
+                        st.download_button(
+                            label="⬇ Excel",
+                            data=st.session_state[exp_key],
+                            file_name=f"UNIDO_{rid}_Evaluation.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"dl_{rid}",
+                            use_container_width=True,
+                        )
 
-        st.markdown(
-            "<div style='border-top:1px solid #f0f0f0;margin:0.6rem 0 0.8rem;'></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
 
 
 # TAB 2 — Synthesis (RAG — passages only, no LLM)
