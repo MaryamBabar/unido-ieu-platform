@@ -2376,7 +2376,7 @@ def show_main_app():
                                     unsafe_allow_html=True,
                                 )
                             checked = st.checkbox(
-                                SDG_NAMES[n][:14], key=f"sdg_cb_{{n}}",
+                                SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
                                 label_visibility="collapsed",
                             )
                             if checked:
