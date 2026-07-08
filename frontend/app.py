@@ -123,6 +123,7 @@ THEMATIC_AREAS = [
 # ── Pilot report metadata (source of truth — overrides backend/Qdrant) ───────
 PILOT_METADATA: dict[str, dict] = {
     "UNIDO-100043": {
+        "project_id":          "100043",
         "title":               "Independent Terminal Evaluation: The Project \"Bamboo Processing for Sri Lanka\"",
         "year":                2021,
         "country":             "Sri Lanka",
@@ -163,6 +164,7 @@ PILOT_METADATA: dict[str, dict] = {
         ],
     },
     "UNIDO-100321": {
+        "project_id":          "100321",
         "title":               "Independent Terminal Evaluation: Initiation of the HCFC Phase Out in the Republic of Azerbaijan",
         "year":                2021,
         "country":             "Azerbaijan",
@@ -203,6 +205,7 @@ PILOT_METADATA: dict[str, dict] = {
         ],
     },
     "UNIDO-104112": {
+        "project_id":          "104112",
         "title":               "Independent Terminal Evaluation: Promoting the Adaptation and Adoption of RECP (Resource Efficient and Cleaner Production) Through the Establishment and Operation of a Cleaner Production Centre (CPC) in Ukraine",
         "year":                2021,
         "country":             "Ukraine",
@@ -244,6 +247,7 @@ PILOT_METADATA: dict[str, dict] = {
         ],
     },
     "UNIDO-120323": {
+        "project_id":          "GFURU-120323",
         "title":               "Independent Terminal Evaluation: Towards a Green Economy in Uruguay: Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors",
         "year":                2021,
         "country":             "Uruguay",
@@ -535,6 +539,12 @@ def load_reports(force: bool = False):
             rid = rep.get("report_id", "")
             if rid in PILOT_METADATA:
                 rep.update(PILOT_METADATA[rid])
+
+        # Always ensure the 4 pilot reports are present even if backend is unreachable
+        existing_ids = {r.get("report_id") for r in merged}
+        for rid, meta in PILOT_METADATA.items():
+            if rid not in existing_ids:
+                merged.append({"report_id": rid, **meta})
 
         st.session_state.all_reports = sorted(
             merged, key=lambda r: r.get("year") or 0, reverse=True
@@ -1119,21 +1129,16 @@ def _report_detail_modal():
         rating = ai["context"]["evaluation_rating"]
 
     # Format fields
+    project_id = ai.get("context", {}).get("project_id") or rep.get("project_id", "")
     rating_str = f" {float(rating):.1f} / 6" if rating else "N/A"
     budget_str = f"USD {budget/1e6:.1f}M" if budget and budget >= 1e5 else ""
-    meta_items = [p for p in [country, rating_str, budget_str, donor] if p]
-    meta_line  = " &nbsp;·&nbsp; ".join(
-        [f" {country}" if country else "",
-         f" {float(rating):.1f}/6" if rating else "",
-         budget_str,
-         donor]
-    )
     meta_line = " &nbsp;·&nbsp; ".join(p for p in [
         f" {country}" if country else "",
         f" {float(rating):.1f}/6" if rating else "",
         budget_str,
         donor,
     ] if p)
+    project_line = f"Project ID: {project_id}" if project_id else ""
 
     # ── Dark-blue header ──────────────────────────────────────────────────────
     st.markdown(f"""
@@ -1141,7 +1146,7 @@ def _report_detail_modal():
                 margin:-1rem -1rem 0 -1rem;padding:1.2rem 1.6rem 1rem;">
       <div style="font-size:0.72rem;opacity:0.75;letter-spacing:0.06em;
                   text-transform:uppercase;margin-bottom:0.4rem;">
-        {rtype} &nbsp;·&nbsp; {year} &nbsp;·&nbsp; {region}
+        {rtype} &nbsp;·&nbsp; {year} &nbsp;·&nbsp; {region}{f" &nbsp;·&nbsp; {project_line}" if project_line else ""}
       </div>
       <div style="font-size:1.15rem;font-weight:700;line-height:1.35;">{title}</div>
       <div style="margin-top:0.55rem;font-size:0.82rem;opacity:0.88;">{meta_line}</div>
@@ -1506,6 +1511,7 @@ def show_search_tab(filters: dict):
             rid      = rep.get("report_id", "")
             rating   = rep.get("evaluation_rating")
             budget   = rep.get("budget_usd")
+            project_id = rep.get("project_id", "")
 
             badges_html    = sdg_badges_row(sdgs, 28)
             rating_html    = _rating_badge(rating)
@@ -1518,6 +1524,7 @@ def show_search_tab(filters: dict):
             meta_parts = [str(year)] if year else []
             if country: meta_parts.append(country)
             if region and region != country: meta_parts.append(region)
+            if project_id: meta_parts.append(f"Project {project_id}")
             meta_line = " · ".join(meta_parts)
 
             with col:
