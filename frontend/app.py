@@ -2351,10 +2351,10 @@ def show_main_app():
                         with cols[i]:
                             if n in _SDG_B64:
                                 st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">' +
-                                    f'<img src="data:image/png;base64,{{_SDG_B64[n]}}" ' +
-                                    f'title="SDG {{n}}: {{SDG_NAMES[n]}}" ' +
-                                    f'style="width:54px;height:54px;border-radius:6px;' +
+                                    f'<div style="text-align:center;margin-bottom:2px;">'
+                                    f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
+                                    f'title="SDG {n}: {SDG_NAMES[n]}" '
+                                    f'style="width:54px;height:54px;border-radius:6px;'
                                     f'object-fit:cover;display:block;margin:0 auto;" /></div>',
                                     unsafe_allow_html=True,
                                 )
@@ -2362,16 +2362,16 @@ def show_main_app():
                                 color = SDG_COLORS[n]
                                 name_short = SDG_NAMES[n].split()[0]
                                 st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">' +
-                                    f'<div style="display:inline-flex;flex-direction:column;' +
-                                    f'align-items:center;justify-content:center;' +
-                                    f'width:54px;height:54px;background:{{color}};color:white;' +
-                                    f'font-weight:800;border-radius:6px;font-size:16px;' +
-                                    f'font-family:Arial,sans-serif;" ' +
-                                    f'title="SDG {{n}}: {{SDG_NAMES[n]}}">' +
-                                    f'<span style="font-size:18px;line-height:1;">{{n}}</span>' +
-                                    f'<span style="font-size:7px;font-weight:600;opacity:0.9;">' +
-                                    f'{{name_short[:6].upper()}}</span>' +
+                                    f'<div style="text-align:center;margin-bottom:2px;">'
+                                    f'<div style="display:inline-flex;flex-direction:column;'
+                                    f'align-items:center;justify-content:center;'
+                                    f'width:54px;height:54px;background:{color};color:white;'
+                                    f'font-weight:800;border-radius:6px;font-size:16px;'
+                                    f'font-family:Arial,sans-serif;" '
+                                    f'title="SDG {n}: {SDG_NAMES[n]}">'
+                                    f'<span style="font-size:18px;line-height:1;">{n}</span>'
+                                    f'<span style="font-size:7px;font-weight:600;opacity:0.9;">'
+                                    f'{name_short[:6].upper()}</span>'
                                     f'</div></div>',
                                     unsafe_allow_html=True,
                                 )
@@ -2383,7 +2383,7 @@ def show_main_app():
                                 sdg_sel_nums.append(n)
                 if sdg_sel_nums:
                     badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
-                    st.markdown(f'<div style="margin-top:4px;">{{badges}}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
             with st.expander("Year", expanded=False):
                 yr_sel = st.selectbox(
                     "Year",
