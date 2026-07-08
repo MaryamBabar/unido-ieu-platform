@@ -801,47 +801,198 @@ def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
 
 
 def make_excel_sections(reports_meta: list[dict], sections_by_id: dict) -> bytes:
-    """Multi-sheet Excel: one sheet per section, one row per report."""
-    META_COLS = ["Report ID", "Title", "Year", "Country", "Region",
-                 "Thematic Area", "Donor", "Evaluation Rating"]
-    SECTIONS = [
-        ("findings",        "Findings"),
-        ("results",         "Results"),
-        ("lessons_learned", "Lessons Learned"),
-        ("conclusions",     "Conclusions"),
-        ("recommendations", "Recommendations"),
-    ]
+    """Comprehensive multi-sheet Excel export with all view detail fields."""
+    import pathlib
+    from openpyxl.styles import Font, PatternFill, Alignment, PatternFill
+    from openpyxl.utils import get_column_letter
 
-    def _meta_row(rep):
-        rating = rep.get("evaluation_rating")
-        return {
-            "Report ID":        rep.get("report_id", ""),
-            "Title":            rep.get("title", ""),
-            "Year":             rep.get("year", ""),
-            "Country":          rep.get("country", ""),
-            "Region":           rep.get("region", ""),
-            "Thematic Area":    rep.get("thematic_category", ""),
-            "Donor":            rep.get("donor", ""),
-            "Evaluation Rating": f"{rating:.1f}/6" if rating else "",
-        }
+    SDG_NAMES_LOCAL = {
+        1:"No Poverty",2:"Zero Hunger",3:"Good Health",4:"Quality Education",
+        5:"Gender Equality",6:"Clean Water",7:"Affordable Clean Energy",
+        8:"Decent Work",9:"Industry Innovation",10:"Reduced Inequalities",
+        11:"Sustainable Cities",12:"Responsible Consumption",13:"Climate Action",
+        14:"Life Below Water",15:"Life on Land",16:"Peace Justice",17:"Partnerships",
+    }
+
+    HEADER_FILL  = PatternFill("solid", fgColor="003DA5")
+    HEADER_FONT  = Font(bold=True, color="FFFFFF", size=10)
+    ALT_FILL     = PatternFill("solid", fgColor="EFF6FF")
+    WRAP_ALIGN   = Alignment(wrap_text=True, vertical="top")
+    TOP_ALIGN    = Alignment(vertical="top")
+
+    def _style_sheet(ws, col_widths: list[int]):
+        """Apply header styling and column widths."""
+        for cell in ws[1]:
+            cell.fill      = HEADER_FILL
+            cell.font      = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.row_dimensions[1].height = 28
+        for i, w in enumerate(col_widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        # Alternate row shading + wrap
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2), start=2):
+            fill = ALT_FILL if row_idx % 2 == 0 else None
+            row_h = 15
+            for cell in row:
+                if fill:
+                    cell.fill = fill
+                cell.alignment = WRAP_ALIGN
+                val_len = len(str(cell.value or ""))
+                row_h = max(row_h, min(15 * max(1, val_len // 60), 120))
+            ws.row_dimensions[row_idx].height = row_h
 
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        for sec_key, sec_label in SECTIONS:
-            rows = []
-            for rep in reports_meta:
-                rid = rep.get("report_id", "")
+
+        # ── Sheet 1: Metadata ────────────────────────────────────────────────
+        meta_rows = []
+        for rep in reports_meta:
+            rid  = rep.get("report_id", "")
+            ai   = _load_ai_extraction(rid)
+            ctx  = ai.get("context", {})
+            rating = ctx.get("evaluation_rating") or rep.get("evaluation_rating")
+            sdgs_raw = ai.get("sdg_mapping", {})
+            sdg_nums = sorted(int(k) for k in sdgs_raw.keys() if str(k).isdigit()) if sdgs_raw else (rep.get("sdgs") or [])
+            meta_rows.append({
+                "Report ID":               rid,
+                "Title":                   ctx.get("title") or rep.get("title", ""),
+                "Year":                    ctx.get("year") or rep.get("year", ""),
+                "Country":                 ctx.get("country") or rep.get("country", ""),
+                "Region":                  ctx.get("region") or rep.get("region", ""),
+                "Report Type":             ctx.get("report_type") or rep.get("report_type", ""),
+                "Primary Thematic Area":   ai.get("primary_thematic_area") or rep.get("thematic_category", ""),
+                "Secondary Thematic Area": ai.get("secondary_thematic_area", ""),
+                "Thematic Justification":  ai.get("thematic_justification", ""),
+                "Evaluation Rating":       f"{float(rating):.1f}/6" if rating else "",
+                "Donor":                   ctx.get("donor") or rep.get("donor", ""),
+                "Project ID":              ctx.get("project_id") or rep.get("project_id", ""),
+                "Budget (USD)":            ctx.get("budget_usd") or rep.get("budget_usd", ""),
+                "SDGs":                    ", ".join(f"SDG {n}" for n in sdg_nums),
+            })
+        df_meta = pd.DataFrame(meta_rows)
+        df_meta.to_excel(writer, sheet_name="Metadata", index=False)
+        ws = writer.sheets["Metadata"]
+        _style_sheet(ws, [14,55,6,18,14,22,28,28,55,16,20,14,14,30])
+
+        # ── Sheet 2: Executive Summary ───────────────────────────────────────
+        summ_rows = []
+        for rep in reports_meta:
+            rid = rep.get("report_id", "")
+            ai  = _load_ai_extraction(rid)
+            ctx = ai.get("context", {})
+            summ_rows.append({
+                "Report ID": rid,
+                "Title":     ctx.get("title") or rep.get("title", ""),
+                "Year":      ctx.get("year") or rep.get("year", ""),
+                "Country":   ctx.get("country") or rep.get("country", ""),
+                "Executive Summary": ai.get("executive_summary") or rep.get("executive_summary", ""),
+            })
+        df_summ = pd.DataFrame(summ_rows)
+        df_summ.to_excel(writer, sheet_name="Executive Summary", index=False)
+        ws = writer.sheets["Executive Summary"]
+        _style_sheet(ws, [14,55,6,18,100])
+
+        # ── Sheet 3: Lessons Learned ─────────────────────────────────────────
+        ll_rows = []
+        for rep in reports_meta:
+            rid = rep.get("report_id", "")
+            ai  = _load_ai_extraction(rid)
+            ctx = ai.get("context", {})
+            lessons = ai.get("lessons_learned") or rep.get("lessons_learned") or []
+            if not lessons:
+                # fallback: raw sections text
                 sec_data = sections_by_id.get(rid, {})
-                text = sec_data.get("sections", {}).get(sec_key, "") if sec_data else ""
-                row = _meta_row(rep)
-                row[sec_label] = text.strip() if text else ""
-                rows.append(row)
-            df = pd.DataFrame(rows, columns=META_COLS + [sec_label])
-            df.to_excel(writer, sheet_name=sec_label[:31], index=False)
-            ws = writer.sheets[sec_label[:31]]
-            for col in ws.columns:
-                max_len = max((len(str(c.value or "")) for c in col), default=0)
-                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 60)
+                raw = (sec_data.get("sections", {}) if sec_data else {}).get("lessons_learned", "")
+                lessons = [raw] if raw else []
+            for i, lesson in enumerate(lessons, 1):
+                ll_rows.append({
+                    "Report ID": rid,
+                    "Title":     ctx.get("title") or rep.get("title", ""),
+                    "Year":      ctx.get("year") or rep.get("year", ""),
+                    "Country":   ctx.get("country") or rep.get("country", ""),
+                    "Primary Thematic Area": ai.get("primary_thematic_area") or rep.get("thematic_category", ""),
+                    "#":         i,
+                    "Lesson Learned": lesson,
+                })
+        df_ll = pd.DataFrame(ll_rows) if ll_rows else pd.DataFrame(
+            columns=["Report ID","Title","Year","Country","Primary Thematic Area","#","Lesson Learned"])
+        df_ll.to_excel(writer, sheet_name="Lessons Learned", index=False)
+        ws = writer.sheets["Lessons Learned"]
+        _style_sheet(ws, [14,45,6,18,28,4,100])
+
+        # ── Sheet 4: Recommendations ─────────────────────────────────────────
+        rec_rows = []
+        for rep in reports_meta:
+            rid = rep.get("report_id", "")
+            ai  = _load_ai_extraction(rid)
+            ctx = ai.get("context", {})
+            recs = ai.get("recommendations") or rep.get("recommendations") or []
+            if not recs:
+                sec_data = sections_by_id.get(rid, {})
+                raw = (sec_data.get("sections", {}) if sec_data else {}).get("recommendations", "")
+                recs = [raw] if raw else []
+            for i, rec in enumerate(recs, 1):
+                rec_rows.append({
+                    "Report ID": rid,
+                    "Title":     ctx.get("title") or rep.get("title", ""),
+                    "Year":      ctx.get("year") or rep.get("year", ""),
+                    "Country":   ctx.get("country") or rep.get("country", ""),
+                    "Primary Thematic Area": ai.get("primary_thematic_area") or rep.get("thematic_category", ""),
+                    "#":         i,
+                    "Recommendation": rec,
+                })
+        df_rec = pd.DataFrame(rec_rows) if rec_rows else pd.DataFrame(
+            columns=["Report ID","Title","Year","Country","Primary Thematic Area","#","Recommendation"])
+        df_rec.to_excel(writer, sheet_name="Recommendations", index=False)
+        ws = writer.sheets["Recommendations"]
+        _style_sheet(ws, [14,45,6,18,28,4,100])
+
+        # ── Sheet 5: SDG Mapping ─────────────────────────────────────────────
+        sdg_rows = []
+        for rep in reports_meta:
+            rid = rep.get("report_id", "")
+            ai  = _load_ai_extraction(rid)
+            ctx = ai.get("context", {})
+            sdg_map = ai.get("sdg_mapping", {})
+            if not sdg_map:
+                # build basic rows from sdgs list without justifications
+                for n in (rep.get("sdgs") or []):
+                    try:
+                        n = int(n)
+                    except Exception:
+                        continue
+                    sdg_rows.append({
+                        "Report ID": rid,
+                        "Title":     ctx.get("title") or rep.get("title", ""),
+                        "Year":      ctx.get("year") or rep.get("year", ""),
+                        "Country":   ctx.get("country") or rep.get("country", ""),
+                        "SDG #":     n,
+                        "SDG Name":  SDG_NAMES_LOCAL.get(n, ""),
+                        "Justification": "",
+                    })
+            else:
+                for k, justification in sdg_map.items():
+                    try:
+                        n = int(k)
+                    except Exception:
+                        continue
+                    sdg_rows.append({
+                        "Report ID": rid,
+                        "Title":     ctx.get("title") or rep.get("title", ""),
+                        "Year":      ctx.get("year") or rep.get("year", ""),
+                        "Country":   ctx.get("country") or rep.get("country", ""),
+                        "SDG #":     n,
+                        "SDG Name":  SDG_NAMES_LOCAL.get(n, ""),
+                        "Justification": justification,
+                    })
+        df_sdg = pd.DataFrame(sdg_rows) if sdg_rows else pd.DataFrame(
+            columns=["Report ID","Title","Year","Country","SDG #","SDG Name","Justification"])
+        if not df_sdg.empty and "SDG #" in df_sdg.columns:
+            df_sdg = df_sdg.sort_values(["Report ID","SDG #"])
+        df_sdg.to_excel(writer, sheet_name="SDG Mapping", index=False)
+        ws = writer.sheets["SDG Mapping"]
+        _style_sheet(ws, [14,45,6,18,6,26,100])
+
     return buf.getvalue()
 
 
@@ -1394,19 +1545,62 @@ def show_search_tab(filters: dict):
                         st.session_state["modal_sec"] = sec_data
                         _report_detail_modal()
                 with b_ai:
-                    if st.button("Ask AI", key=f"askai_{rid}", type="primary", use_container_width=True):
-                        st.session_state["synth_sel"] = [rid]
-                        st.session_state["synth_goto"] = True
-                        st.rerun()
-                with b_exp:
-                    exp_key = f"export_bytes_{rid}"
-                    if not st.session_state.get(exp_key):
-                        if st.button("Export", key=f"exp_{rid}", use_container_width=True):
-                            with st.spinner("Preparing Excel…"):
-                                sec_e = load_sections(rid)
-                            st.session_state[exp_key] = make_excel_sections([rep], {rid: sec_e}) if sec_e else b""
+                    askai_key = f"askai_prompt_{rid}"
+                    if st.session_state.get(askai_key):
+                        # Show the pre-built prompt panel
+                        st.markdown(
+                            f'<a href="https://copilot.microsoft.com" target="_blank" '
+                            f'style="display:block;text-align:center;background:#0078d4;color:white;'
+                            f'padding:6px 10px;border-radius:6px;font-size:0.82rem;font-weight:600;'
+                            f'text-decoration:none;margin-bottom:4px;">🤖 Open Copilot ↗</a>',
+                            unsafe_allow_html=True,
+                        )
+                        st.text_area(
+                            "Copy → paste into Copilot:",
+                            value=st.session_state[askai_key],
+                            height=160,
+                            key=f"askai_ta_{rid}",
+                            label_visibility="visible",
+                        )
+                        if st.button("✕ Close", key=f"askai_close_{rid}", use_container_width=True):
+                            del st.session_state[askai_key]
                             st.rerun()
                     else:
+                        if st.button("Ask AI", key=f"askai_{rid}", type="primary", use_container_width=True):
+                            ai_data = _load_ai_extraction(rid)
+                            ctx     = ai_data.get("context", {})
+                            _title  = ctx.get("title") or rep.get("title", "")
+                            _year   = ctx.get("year") or rep.get("year", "")
+                            _cntry  = ctx.get("country") or rep.get("country", "")
+                            _theme  = ai_data.get("primary_thematic_area") or rep.get("thematic_category", "")
+                            _summ   = ai_data.get("executive_summary") or rep.get("executive_summary", "")
+                            _les    = ai_data.get("lessons_learned") or []
+                            _recs   = ai_data.get("recommendations") or []
+                            _sdgs   = ai_data.get("sdg_mapping") or {}
+                            _sdg_s  = ", ".join(
+                                f"SDG {k}" for k in sorted(_sdgs.keys(), key=lambda x: int(x) if x.isdigit() else 99)
+                            ) if _sdgs else ""
+                            parts = [
+                                f"UNIDO Evaluation Report: {_title} ({_year}, {_cntry})",
+                                f"Thematic Area: {_theme}" if _theme else "",
+                                f"SDGs: {_sdg_s}" if _sdg_s else "",
+                                "",
+                                "EXECUTIVE SUMMARY:",
+                                (_summ[:1500] if _summ else "(not available)"),
+                            ]
+                            if _les:
+                                parts += ["", "KEY LESSONS LEARNED:"]
+                                parts += [f"{i}. {l}" for i, l in enumerate(_les[:5], 1)]
+                            if _recs:
+                                parts += ["", "KEY RECOMMENDATIONS:"]
+                                parts += [f"{i}. {r}" for i, r in enumerate(_recs[:5], 1)]
+                            parts += ["", "---", "Please analyse this evaluation report and share your insights."]
+                            st.session_state[askai_key] = "\n".join(p for p in parts)
+                            st.rerun()
+                with b_exp:
+                    exp_key = f"export_bytes_{rid}"
+                    exp_err_key = f"export_err_{rid}"
+                    if exp_key in st.session_state:
                         st.download_button(
                             label="⬇ Excel",
                             data=st.session_state[exp_key],
@@ -1415,6 +1609,18 @@ def show_search_tab(filters: dict):
                             key=f"dl_{rid}",
                             use_container_width=True,
                         )
+                    else:
+                        if st.session_state.get(exp_err_key):
+                            st.error(st.session_state.pop(exp_err_key), icon="⚠️")
+                        if st.button("Export", key=f"exp_{rid}", use_container_width=True):
+                            with st.spinner("Preparing Excel…"):
+                                try:
+                                    sec_e = load_sections(rid)
+                                    xl_bytes = make_excel_sections([rep], {rid: sec_e})
+                                    st.session_state[exp_key] = xl_bytes
+                                except Exception as _ex:
+                                    st.session_state[exp_err_key] = f"Export failed: {_ex}"
+                            st.rerun()
 
         st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
 
@@ -1562,9 +1768,9 @@ def show_synthesis_tab(filters: dict):
                     st.error(str(e))
 
         st.info(
-            " **AI Synthesis** (generates a written answer across reports) can be enabled "
+            "**AI Synthesis** (generates a written answer across reports) can be enabled "
             "by adding your Anthropic API key to `.env`. Currently showing raw retrieved passages.",
-            icon="Note:",
+            icon="ℹ️",
         )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2043,8 +2249,8 @@ def show_admin_tab():
                         st.error(r.json().get("detail","Error"))
         with c4:
             if u["username"] != st.session_state.username:
-                if st.button("", key=f"del_{u['username']}"):
-                    r = api("DELETE", f"/api/v1/admin/users/{u['username']}")
+                if st.button("", key=f"del_{{u['username']}}"):
+                    r = api("DELETE", f"/api/v1/admin/users/{{u['username']}}")
                     if r.status_code == 200:
                         st.success(r.json()["detail"]); st.rerun()
                     else:
@@ -2052,11 +2258,11 @@ def show_admin_tab():
         st.divider()
 
     if sessions:
-        st.markdown(f"### Active sessions ({len(sessions)})")
+        st.markdown(f"### Active sessions ({{len(sessions)}})")
         for s in sessions:
             st.caption(
-                f"• {s['display_name']} (@{s['username']}) — "
-                f"logged in {s['login_time'][:19].replace('T',' ')} UTC"
+                f"• {{s['display_name']}} (@{{s['username']}}) — "
+                f"logged in {{s['login_time'][:19].replace('T',' ')}} UTC"
             )
 
     st.divider()
@@ -2079,7 +2285,7 @@ def show_admin_tab():
                 r = api("POST", "/api/v1/admin/users",
                         json={"username": nu, "password": np, "display_name": nd, "role": nr})
                 if r.status_code == 200:
-                    st.success(f" User '{nu}' created."); st.rerun()
+                    st.success(f" User '{{nu}}' created."); st.rerun()
                 else:
                     st.error(r.json().get("detail","Error"))
 
@@ -2097,7 +2303,7 @@ def show_admin_tab():
                 if not new_pw or len(new_pw) < 8:
                     st.error("Password must be ≥ 8 characters.")
                 else:
-                    r = api("POST", f"/api/v1/admin/users/{pw_user}/password",
+                    r = api("POST", f"/api/v1/admin/users/{{pw_user}}/password",
                             json={"new_password": new_pw})
                     if r.status_code == 200:
                         st.success(r.json()["detail"])
@@ -2117,16 +2323,16 @@ def show_main_app():
     <div class="unido-header">
       <div>
         <span class="unido-logo">UNIDO</span>
-        <span class="unido-sub"> &nbsp;|&nbsp; Evaluation Intelligence Platform &nbsp;·&nbsp; IEU / EIO</span>
+        <span class="unido-sub">  |  Evaluation Intelligence Platform  ·  IEU / EIO</span>
       </div>
-      <div class="user-chip"> {st.session_state.display_name}</div>
+      <div class="user-chip"> {{st.session_state.display_name}}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Sidebar ───────────────────────────────────────────────────────────────
+    # ── Sidebar ─────────────────────────────────────────────────────────────────────────
     with st.sidebar:
-        st.markdown(f"**{st.session_state.display_name}**")
-        st.caption(f"@{st.session_state.username} · {st.session_state.role.title()}")
+        st.markdown(f"**{{st.session_state.display_name}}**")
+        st.caption(f"@{{st.session_state.username}} · {{st.session_state.role.title()}}")
         if st.button("Sign out", use_container_width=True):
             do_logout()
         st.divider()
@@ -2145,10 +2351,10 @@ def show_main_app():
                         with cols[i]:
                             if n in _SDG_B64:
                                 st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">'
-                                    f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
-                                    f'title="SDG {n}: {SDG_NAMES[n]}" '
-                                    f'style="width:54px;height:54px;border-radius:6px;'
+                                    f'<div style="text-align:center;margin-bottom:2px;">' +
+                                    f'<img src="data:image/png;base64,{{_SDG_B64[n]}}" ' +
+                                    f'title="SDG {{n}}: {{SDG_NAMES[n]}}" ' +
+                                    f'style="width:54px;height:54px;border-radius:6px;' +
                                     f'object-fit:cover;display:block;margin:0 auto;" /></div>',
                                     unsafe_allow_html=True,
                                 )
@@ -2156,28 +2362,28 @@ def show_main_app():
                                 color = SDG_COLORS[n]
                                 name_short = SDG_NAMES[n].split()[0]
                                 st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">'
-                                    f'<div style="display:inline-flex;flex-direction:column;'
-                                    f'align-items:center;justify-content:center;'
-                                    f'width:54px;height:54px;background:{color};color:white;'
-                                    f'font-weight:800;border-radius:6px;font-size:16px;'
-                                    f'font-family:Arial,sans-serif;" '
-                                    f'title="SDG {n}: {SDG_NAMES[n]}">'
-                                    f'<span style="font-size:18px;line-height:1;">{n}</span>'
-                                    f'<span style="font-size:7px;font-weight:600;opacity:0.9;">'
-                                    f'{name_short[:6].upper()}</span>'
+                                    f'<div style="text-align:center;margin-bottom:2px;">' +
+                                    f'<div style="display:inline-flex;flex-direction:column;' +
+                                    f'align-items:center;justify-content:center;' +
+                                    f'width:54px;height:54px;background:{{color}};color:white;' +
+                                    f'font-weight:800;border-radius:6px;font-size:16px;' +
+                                    f'font-family:Arial,sans-serif;" ' +
+                                    f'title="SDG {{n}}: {{SDG_NAMES[n]}}">' +
+                                    f'<span style="font-size:18px;line-height:1;">{{n}}</span>' +
+                                    f'<span style="font-size:7px;font-weight:600;opacity:0.9;">' +
+                                    f'{{name_short[:6].upper()}}</span>' +
                                     f'</div></div>',
                                     unsafe_allow_html=True,
                                 )
                             checked = st.checkbox(
-                                SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
+                                SDG_NAMES[n][:14], key=f"sdg_cb_{{n}}",
                                 label_visibility="collapsed",
                             )
                             if checked:
                                 sdg_sel_nums.append(n)
                 if sdg_sel_nums:
                     badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
-                    st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="margin-top:4px;">{{badges}}</div>', unsafe_allow_html=True)
             with st.expander("Year", expanded=False):
                 yr_sel = st.selectbox(
                     "Year",
@@ -2214,10 +2420,10 @@ def show_main_app():
         st.markdown("### System")
         if st.button("Health check", use_container_width=True):
             try:
-                rh = httpx.get(f"{BACKEND_URL}/api/v1/health", timeout=8)
+                rh = httpx.get(f"{{BACKEND_URL}}/api/v1/health", timeout=8)
                 st.session_state.backend_healthy = rh.json()
             except Exception as e:
-                st.session_state.backend_healthy = {"error": str(e)}
+                st.session_state.backend_healthy = {{"error": str(e)}}
         if st.session_state.backend_healthy:
             h = st.session_state.backend_healthy
             if "error" in h:
@@ -2225,39 +2431,21 @@ def show_main_app():
                             unsafe_allow_html=True)
             else:
                 cls = "dot-green" if h.get("status") == "healthy" else "dot-amber"
-                st.markdown(f'<span class="dot {cls}"></span> {h.get("status","").title()}',
+                st.markdown(f'<span class="dot {{cls}}"></span> {{h.get("status","").title()}}',
                             unsafe_allow_html=True)
                 qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
-                st.markdown(f'<span class="dot {qcls}"></span> Qdrant '
-                            f'{"" if h.get("qdrant_connected") else ""}',
+                st.markdown(f'<span class="dot {{qcls}}"></span> Qdrant ' +
+                            f'{{"" if h.get("qdrant_connected") else ""}}',
                             unsafe_allow_html=True)
                 if h.get("document_count", 0):
-                    st.caption(f"{h['document_count']:,} chunks indexed")
+                    st.caption(f"{{h['document_count']:,}} chunks indexed")
 
-    # ── Tabs ──────────────────────────────────────────────────────────────────
+    # ── Tabs ──────────────────────────────────────────────────────────────────────────────
     tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
     if is_admin:
         tab_names.append("Admin")
 
     tabs = st.tabs(tab_names)
-
-    # ── Ask AI redirect: pre-select report and jump to Synthesis tab ──────────
-    if st.session_state.pop("synth_goto", False):
-        import streamlit.components.v1 as components
-        components.html(
-            """
-            <script>
-              setTimeout(function() {
-                var tabBtns = window.parent.document.querySelectorAll(
-                  '[data-testid="stTabs"] button[role="tab"]'
-                );
-                if (tabBtns && tabBtns.length > 1) { tabBtns[1].click(); }
-              }, 180);
-            </script>
-            """,
-            height=0,
-            scrolling=False,
-        )
 
     with tabs[0]:
         show_search_tab(filters)
