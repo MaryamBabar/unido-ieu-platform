@@ -2249,8 +2249,8 @@ def show_admin_tab():
                         st.error(r.json().get("detail","Error"))
         with c4:
             if u["username"] != st.session_state.username:
-                if st.button("", key=f"del_{{u['username']}}"):
-                    r = api("DELETE", f"/api/v1/admin/users/{{u['username']}}")
+                if st.button("", key=f"del_{u['username']}"):
+                    r = api("DELETE", f"/api/v1/admin/users/{u['username']}")
                     if r.status_code == 200:
                         st.success(r.json()["detail"]); st.rerun()
                     else:
@@ -2258,11 +2258,11 @@ def show_admin_tab():
         st.divider()
 
     if sessions:
-        st.markdown(f"### Active sessions ({{len(sessions)}})")
+        st.markdown(f"### Active sessions ({len(sessions)})")
         for s in sessions:
             st.caption(
                 f"• {{s['display_name']}} (@{{s['username']}}) — "
-                f"logged in {{s['login_time'][:19].replace('T',' ')}} UTC"
+                f"logged in {s['login_time'][:19].replace('T',' ')} UTC"
             )
 
     st.divider()
@@ -2285,7 +2285,7 @@ def show_admin_tab():
                 r = api("POST", "/api/v1/admin/users",
                         json={"username": nu, "password": np, "display_name": nd, "role": nr})
                 if r.status_code == 200:
-                    st.success(f" User '{{nu}}' created."); st.rerun()
+                    st.success(f" User '{nu}' created."); st.rerun()
                 else:
                     st.error(r.json().get("detail","Error"))
 
@@ -2303,7 +2303,7 @@ def show_admin_tab():
                 if not new_pw or len(new_pw) < 8:
                     st.error("Password must be ≥ 8 characters.")
                 else:
-                    r = api("POST", f"/api/v1/admin/users/{{pw_user}}/password",
+                    r = api("POST", f"/api/v1/admin/users/{pw_user}/password",
                             json={"new_password": new_pw})
                     if r.status_code == 200:
                         st.success(r.json()["detail"])
@@ -2325,14 +2325,14 @@ def show_main_app():
         <span class="unido-logo">UNIDO</span>
         <span class="unido-sub">  |  Evaluation Intelligence Platform  ·  IEU / EIO</span>
       </div>
-      <div class="user-chip"> {{st.session_state.display_name}}</div>
+      <div class="user-chip"> {st.session_state.display_name}</div>
     </div>
     """, unsafe_allow_html=True)
 
     # ── Sidebar ─────────────────────────────────────────────────────────────────────────
     with st.sidebar:
-        st.markdown(f"**{{st.session_state.display_name}}**")
-        st.caption(f"@{{st.session_state.username}} · {{st.session_state.role.title()}}")
+        st.markdown(f"**{st.session_state.display_name}**")
+        st.caption(f"@{st.session_state.username} · {st.session_state.role.title()}")
         if st.button("Sign out", use_container_width=True):
             do_logout()
         st.divider()
@@ -2420,10 +2420,10 @@ def show_main_app():
         st.markdown("### System")
         if st.button("Health check", use_container_width=True):
             try:
-                rh = httpx.get(f"{{BACKEND_URL}}/api/v1/health", timeout=8)
+                rh = httpx.get(f"{BACKEND_URL}/api/v1/health", timeout=8)
                 st.session_state.backend_healthy = rh.json()
             except Exception as e:
-                st.session_state.backend_healthy = {{"error": str(e)}}
+                st.session_state.backend_healthy = {"error": str(e)}
         if st.session_state.backend_healthy:
             h = st.session_state.backend_healthy
             if "error" in h:
@@ -2431,14 +2431,14 @@ def show_main_app():
                             unsafe_allow_html=True)
             else:
                 cls = "dot-green" if h.get("status") == "healthy" else "dot-amber"
-                st.markdown(f'<span class="dot {{cls}}"></span> {{h.get("status","").title()}}',
+                st.markdown(f'<span class="dot {cls}"></span> {h.get("status","").title()}',
                             unsafe_allow_html=True)
                 qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
-                st.markdown(f'<span class="dot {{qcls}}"></span> Qdrant ' +
-                            f'{{"" if h.get("qdrant_connected") else ""}}',
+                st.markdown(f'<span class="dot {qcls}"></span> Qdrant ' +
+                            f'{"" if h.get("qdrant_connected") else ""}',
                             unsafe_allow_html=True)
                 if h.get("document_count", 0):
-                    st.caption(f"{{h['document_count']:,}} chunks indexed")
+                    st.caption(f"{h['document_count']:,} chunks indexed")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────────────────
     tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
