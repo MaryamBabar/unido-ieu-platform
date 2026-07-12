@@ -125,6 +125,7 @@ THEMATIC_AREAS = [
 PILOT_METADATA: dict[str, dict] = {
     "UNIDO-100043": {
         "project_id":          "100043",
+        "gef_id":              "4114",
         "title":               "Independent Terminal Evaluation: The Project \"Bamboo Processing for Sri Lanka\"",
         "year":                2021,
         "country":             "Sri Lanka",
@@ -133,9 +134,61 @@ PILOT_METADATA: dict[str, dict] = {
         "secondary_thematic_area": "Circular Economy / Waste Management",
         "report_type":         "Project Evaluation",
         "donor":               "GEF",
-        "budget_usd":          23652000,
+        "budget_usd":          2_355_000,
         "evaluation_rating":   2.0,
         "overall_rating_label":"Unsatisfactory",
+        "util_rate":           100.8,
+        # ── Duration & delay (Sept 2012 – Mar 2021, 13-month overrun) ────────
+        "planned_months":      90,
+        "actual_months":       103,
+        "delay_months":        13,
+        "overrun_pct":         14,
+        "has_delay":           True,
+        "start_year":          2012,
+        "planned_end_year":    2020,
+        "actual_end_year":     2021,
+        "duration_str":        "Sept 2012 – Mar 2021",
+        "delay_causes": (
+            "A Project Management Office was not established on time, delaying coordination from inception. "
+            "Touchwood Investments PLC — primary private partner pledging USD 1.3M — went bankrupt early. "
+            "Of USD 21.3M co-financing pledged at design, only UNIDO's USD 100,000 was received. "
+            "A USD 600,000 revolving fund sat idle at Hatton National Bank (2014–18) before being "
+            "cancelled by the Steering Committee, disrupting financial planning for two years."
+        ),
+        # ── Year-by-year GEF disbursement (Annex — Budget Execution table) ───
+        "disbursement_by_year": {
+            2012: 38_884,
+            2013: 261_518,
+            2014: 597_169,
+            2015: 498_978,
+            2016: 254_890,
+            2017: 241_738,
+            2019: 551_592,  # 2018 excluded: revolving fund reversal (accounting entry, not real spend)
+            2020: 110_856,
+        },
+        # ── Co-financing planned vs actually received (Table 13) ──────────────
+        "cofinancing_labels":  ["Mahaweli Auth.", "Ministry Industry", "Forest Dept.", "Touchwood PLC", "Bamboo Resources", "UNIDO"],
+        "cofinancing_planned": [12_920_000, 1_500_000, 4_377_000, 1_300_000, 1_100_000, 100_000],
+        "cofinancing_actual":  [0, 0, 0, 0, 0, 100_000],
+        # ── Timeline milestones (Annex 9) ─────────────────────────────────────
+        "timeline_events": [
+            {"yr": 2012, "lab": "Project start",              "type": "plan"},
+            {"yr": 2013, "lab": "Bamboo Growers Assoc. est.", "type": "actual"},
+            {"yr": 2014, "lab": "Revolving fund established", "type": "actual"},
+            {"yr": 2016, "lab": "Mid-Term Evaluation",        "type": "actual"},
+            {"yr": 2018, "lab": "Revolving fund cancelled",   "type": "actual"},
+            {"yr": 2019, "lab": "PMO established",            "type": "actual"},
+            {"yr": 2021, "lab": "Project completion",         "type": "actual"},
+        ],
+        # ── Gender: project was gender-blind (rating: Unsatisfactory) ─────────
+        "stakeholders_rich": None,
+        "gender_rating": "Unsatisfactory",
+        "gender_note": (
+            "The project had no gender mainstreaming objectives and was effectively gender-blind. "
+            "Training participants were predominantly male; no initiatives encouraged female participation "
+            "except in bamboo handcraft and design. Outcomes disproportionately favoured males. "
+            "Gender mainstreaming is rated Unsatisfactory."
+        ),
         "sdgs":                [8, 12, 15],
         "thematic_justification": (
             "The project focused on developing the bamboo value chain as an agro-industrial sector, "
@@ -273,10 +326,70 @@ PILOT_METADATA: dict[str, dict] = {
         "thematic_category":   "Circular Economy / Waste Management",
         "secondary_thematic_area": "Industrial Policy & Competitiveness",
         "report_type":         "Project Evaluation",
-        "donor":               "Switzerland (SECO), Austria",
-        "budget_usd":          5181779,
+        "donor":               "Switzerland (SECO) / Austria",
+        "budget_usd":          5_181_779,
         "evaluation_rating":   5.0,
         "overall_rating_label":"Satisfactory",
+        "util_rate":           91.4,
+        # ── Duration & delay (Oct 2011 – Dec 2020, 50-month overrun) ─────────
+        "planned_months":      60,
+        "actual_months":       110,
+        "delay_months":        50,
+        "overrun_pct":         83,
+        "has_delay":           True,
+        "start_year":          2011,
+        "planned_end_year":    2016,
+        "actual_end_year":     2020,
+        "duration_str":        "Oct 2011 – Dec 2020",
+        "delay_causes": (
+            "The conflict in eastern Ukraine (2013–14) and annexation of Crimea caused a major "
+            "economic shock, slowing industrial production and project uptake across target sectors. "
+            "Budget underspending left USD 1.3M available in 2017 (original close year), triggering "
+            "36 months of no-cost extension. Organisational delays — creating a second LLC entity "
+            "alongside the NGO and extended CTA engagement — compounded the overrun."
+        ),
+        # ── Year-by-year expenditure (Grants 200001206/07/08 combined) ───────
+        "disbursement_by_year": {
+            2012: 287_996,
+            2013: 331_879,
+            2014: 714_686,
+            2015: 631_833,
+            2016: 333_199,
+            2017: 578_989,
+            2018: 467_158,
+            2019: 266_685,
+            2020: 339_958,
+        },
+        # ── Donor contributions (no standard GEF co-fin table — SECO-funded) ─
+        "cofinancing_labels":  ["SECO (Switzerland)", "Austria"],
+        "cofinancing_planned": [4_590_000, 591_779],
+        "cofinancing_actual":  [4_337_482, 400_000],
+        # ── Timeline milestones ───────────────────────────────────────────────
+        "timeline_events": [
+            {"yr": 2011, "lab": "Project launch",        "type": "plan"},
+            {"yr": 2013, "lab": "RECPC NGO established", "type": "actual"},
+            {"yr": 2015, "lab": "Mid-Term Review",       "type": "actual"},
+            {"yr": 2016, "lab": "RECPC LLC established", "type": "actual"},
+            {"yr": 2018, "lab": "1st no-cost extension", "type": "actual"},
+            {"yr": 2020, "lab": "Project completion",    "type": "actual"},
+        ],
+        # ── Gender (Table 7: % female in regional RECP training + RECPC staff)
+        "stakeholders_rich": [
+            {"name": "RECPC Staff",       "role": "CPC management & assessors",        "pct_women": 40},
+            {"name": "Kyiv hub",          "role": "Regional RECP training (2019)",     "pct_women": 33},
+            {"name": "Zaporizhzhia hub",  "role": "Regional RECP training (2019)",     "pct_women": 67},
+            {"name": "Lviv hub",          "role": "Regional RECP training (2019)",     "pct_women": 56},
+            {"name": "Kharkiv hub",       "role": "Regional RECP training (2019)",     "pct_women": 33},
+            {"name": "RECP expert pool",  "role": "Certified RECP experts (all years)","pct_women": 35},
+        ],
+        "gender_rating": "Satisfactory",
+        "gender_note": (
+            "Gender mainstreaming improved progressively over the project. By close, 5 of 13 RECPC "
+            "assessors were women (40%), and 35% of 325 trained RECP experts were female (114 women). "
+            "Regional training saw strong upward trends: Lviv rose from 14% to 56% female, "
+            "Zaporizhzhia from 56% to 67% (2018–2019). The Centre applied for the Women's Energy "
+            "Club of Ukraine gender award in 2020. Rated Satisfactory."
+        ),
         "sdgs":                [9, 12, 13, 17],
         "thematic_justification": (
             "The project established and operationalized Ukraine's National Cleaner Production Centre "
@@ -308,17 +421,73 @@ PILOT_METADATA: dict[str, dict] = {
     },
     "UNIDO-120323": {
         "project_id":          "GFURU-120323",
+        "gef_id":              "4890",
         "title":               "Independent Terminal Evaluation: Towards a Green Economy in Uruguay: Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors",
         "year":                2021,
         "country":             "Uruguay",
         "region":              "Latin America",
         "thematic_category":   "Climate Action",
-        "secondary_thematic_area": "Clean / Renewable Energy",
+        "secondary_thematic_area": "Circular Economy / Waste Management",
         "report_type":         "Project Evaluation",
         "donor":               "GEF",
-        "budget_usd":          30500000,
+        "budget_usd":          3_392_727,
         "evaluation_rating":   5.0,
         "overall_rating_label":"Satisfactory",
+        "util_rate":           99.4,
+        # ── Duration & delay (Dec 2013 – Dec 2020, 37-month overrun) ─────────
+        "planned_months":      48,
+        "actual_months":       85,
+        "delay_months":        37,
+        "overrun_pct":         77,
+        "has_delay":           True,
+        "start_year":          2013,
+        "planned_end_year":    2017,
+        "actual_end_year":     2020,
+        "duration_str":        "Dec 2013 – Dec 2020",
+        "delay_causes": (
+            "The original 48-month timeline was unrealistic given the project's technical and "
+            "institutional complexity. Significant disbursement lag in the first three years (only "
+            "USD 99,511 of USD 446,694 planned in 2014) reflected procedural shortcomings and "
+            "limited proactivity of monitoring structures. INC's flagship biodigester pilot was "
+            "discarded after pre-feasibility and ALUR delivered only 26% of its planned investments, "
+            "requiring major restructuring of pilot activities."
+        ),
+        # ── GEF expenditure by component (year-by-year chart unreadable in PDF)
+        "disbursement_by_year": {
+            "C1: Policy": 677_508,
+            "C2: Knowledge": 394_934,
+            "C3: Pilots": 1_766_205,
+            "C4: Capacity": 469_268,
+            "C5: M&E": 48_594,
+        },
+        # ── Co-financing by source: planned vs actual (Table 8) ───────────────
+        "cofinancing_labels":  ["INC", "ALUR", "Estancias del Lago", "MGAP", "MIEM", "UNIDO"],
+        "cofinancing_planned": [13_000_000, 7_400_000, 10_000_000, 300_000, 1_300_000, 110_000],
+        "cofinancing_actual":  [0, 1_924_000, 10_000_000, 300_000, 1_300_000, 110_000],
+        # ── Timeline milestones ───────────────────────────────────────────────
+        "timeline_events": [
+            {"yr": 2013, "lab": "Project start",          "type": "plan"},
+            {"yr": 2016, "lab": "Mid-Term Review",        "type": "actual"},
+            {"yr": 2017, "lab": "Planned completion",     "type": "plan"},
+            {"yr": 2017, "lab": "Biogas standard adopted","type": "actual"},
+            {"yr": 2019, "lab": "Circular Econ. Network", "type": "actual"},
+            {"yr": 2020, "lab": "Actual completion",      "type": "actual"},
+        ],
+        # ── Gender indicators (Annex 6, PIR 2020 — targets all exceeded) ─────
+        "stakeholders_rich": [
+            {"name": "DNE/DINAMA/MGAP WG", "role": "Policy working group",        "pct_women": 60},
+            {"name": "Knowledge Network",   "role": "Knowledge mgmt platform",     "pct_women": 48},
+            {"name": "Workshop attendees",  "role": "Dissemination workshops",     "pct_women": 67},
+            {"name": "University WGs",      "role": "Academia–industry liaison",   "pct_women": 67},
+        ],
+        "gender_rating": "Satisfactory",
+        "gender_note": (
+            "All gender targets were achieved and in most cases exceeded. The inter-institutional "
+            "policy working group reached 60% female (target: 30%). The knowledge network was 48% "
+            "female; dissemination workshops 67%; university working groups 67%. A gender action "
+            "plan aligned with UNIDO's 2016 Gender Equality strategy was implemented from Year 2. "
+            "Rated Satisfactory (Score 5)."
+        ),
         "sdgs":                [7, 9, 12, 13, 17],
         "thematic_justification": (
             "The project's primary objective was to stimulate the adoption of sustainable practices "
@@ -3716,97 +3885,4 @@ def show_main_app():
                             if checked:
                                 sdg_sel_nums.append(n)
                 if sdg_sel_nums:
-                    badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
-                    st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
-            with st.expander("Year", expanded=False):
-                yr_sel = st.selectbox(
-                    "Year",
-                    ["All years", 2025, 2024, 2023, 2022, 2021],
-                    label_visibility="collapsed", key="f_year",
-                )
-            with st.expander("Evaluation Type", expanded=False):
-                eval_type_sel = st.multiselect(
-                    "Type",
-                    ["Project Evaluation", "Strategic Evaluation", "Country Evaluation",
-                     "Synthesis", "Reference Document"],
-                    label_visibility="collapsed", key="f_eval_type",
-                )
-            with st.expander("Region", expanded=False):
-                region_sel = st.multiselect(
-                    "Region",
-                    ["Africa", "Asia", "Europe", "Latin America", "Middle East", "Global"],
-                    label_visibility="collapsed", key="f_region",
-                )
-            st.form_submit_button("Search", use_container_width=True, type="primary")
-
-        filters = {
-            "thematic":   thematic_sel,
-            "sdgs":       sdg_sel_nums,
-            "eval_type":  eval_type_sel,
-            "region":     region_sel,
-            "years":      [yr_sel] if yr_sel != "All years" else [],
-            "year_min":   yr_sel if yr_sel != "All years" else None,
-            "year_max":   yr_sel if yr_sel != "All years" else None,
-            "dac":        [],
-        }
-
-        st.divider()
-        st.markdown("### System")
-        if st.button("Health check", use_container_width=True):
-            try:
-                rh = httpx.get(f"{BACKEND_URL}/api/v1/health", timeout=8)
-                st.session_state.backend_healthy = rh.json()
-            except Exception as e:
-                st.session_state.backend_healthy = {"error": str(e)}
-        if st.session_state.backend_healthy:
-            h = st.session_state.backend_healthy
-            if "error" in h:
-                st.markdown('<span class="dot dot-red"></span> Unreachable',
-                            unsafe_allow_html=True)
-            else:
-                cls = "dot-green" if h.get("status") == "healthy" else "dot-amber"
-                st.markdown(f'<span class="dot {cls}"></span> {h.get("status","").title()}',
-                            unsafe_allow_html=True)
-                qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
-                st.markdown(f'<span class="dot {qcls}"></span> Qdrant ' +
-                            f'{"" if h.get("qdrant_connected") else ""}',
-                            unsafe_allow_html=True)
-                if h.get("document_count", 0):
-                    st.caption(f"{h['document_count']:,} chunks indexed")
-
-    # ── Tabs ──────────────────────────────────────────────────────────────────────────────
-    tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
-    if is_admin:
-        tab_names.append("Admin")
-
-    tabs = st.tabs(tab_names)
-
-    with tabs[0]:
-        show_search_tab(filters)
-    with tabs[1]:
-        show_synthesis_tab(filters)
-    with tabs[2]:
-        show_visualize_tab()
-    with tabs[3]:
-        show_dac_tab()
-    if is_admin:
-        with tabs[4]:
-            show_admin_tab()
-
-    st.divider()
-    st.markdown(
-        "<p style='text-align:center;color:#9ca3af;font-size:.72rem;'>"
-        "UNIDO IEU Evaluation Intelligence Platform · Internal use only · "
-        "Retrieved passages should be verified against source documents before formal citation."
-        "</p>",
-        unsafe_allow_html=True,
-    )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Router
-# ─────────────────────────────────────────────────────────────────────────────
-
-if not st.session_state.session_token:
-    show_login_page()
-else:
-    show_main_app()
+                    badges 
