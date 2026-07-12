@@ -828,6 +828,7 @@ def extract_items(chunk_text: str, max_items: int = 8) -> list[str]:
     return [result] if _is_quality_item(result) else []
 
 
+
 def make_excel_sections(reports_meta: list[dict], sections_by_id: dict) -> bytes:
     """Comprehensive multi-sheet Excel export with all view detail fields."""
     import pathlib
@@ -1460,12 +1461,12 @@ def _report_detail_modal():
         with r2c3:
             st.markdown(_info_card("Overall Rating", rating_lbl), unsafe_allow_html=True)
 
-    # ── Footer download ───────────────────────────────────────────────────────
+    # ── Footer downloads ──────────────────────────────────────────────────────
+    st.divider()
     if sec_data and sec_data.get("sections"):
-        st.divider()
         xl = make_excel_sections([rep], {rid: sec_data})
         st.download_button(
-            "Download Full Report as Excel",
+            "⬇ Download Excel",
             data=xl,
             file_name=f"UNIDO_{rid}_Evaluation.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2031,196 +2032,801 @@ def _build_knowledge_graph_figure(reports: list, by_sdg: dict, by_thematic: dict
 
 
 def show_visualize_tab():
-    # ── Load data ─────────────────────────────────────────────────────────────
     load_reports()
-    # Demo phase: restrict to the 4 verified pilot reports only
     reports = [r for r in (st.session_state.all_reports or [])
                if r.get("report_id") in PILOT_METADATA]
-
-    # Compute stats locally from the 4 pilot reports (no backend call needed)
-    total_docs   = len(reports)
-    total_chunks = total_docs * 0  # not displayed for pilot
-    by_year: dict     = {}
-    by_thematic: dict = {}
-    by_sdg: dict      = {}
-    by_dac: dict      = {}
-    for r in reports:
-        y = str(r.get("year") or "Unknown")
-        by_year[y] = by_year.get(y, 0) + 1
-        t = r.get("thematic_category") or "Unknown"
-        by_thematic[t] = by_thematic.get(t, 0) + 1
-        for s in (r.get("sdgs") or []):
-            k = f"SDG {s}"
-            by_sdg[k] = by_sdg.get(k, 0) + 1
-    total_chunks = sum(by_year.values()) * 200  # rough proxy for display
-
-    # ── Stat cards ────────────────────────────────────────────────────────────
-    sdg_count = len([v for v in by_sdg.values() if v > 0])
-    countries  = len(set(r.get("country", "") for r in reports if r.get("country")))
-    c1, c2, c3, c4 = st.columns(4)
-    for col, num, lbl in [
-        (c1, total_docs,    "Pilot Reports"),
-        (c2, sdg_count,     "SDGs Covered"),
-        (c3, countries,     "Countries"),
-        (c4, len(by_thematic), "Thematic Areas"),
-    ]:
-        col.markdown(
-            f'<div class="stat-card"><div class="stat-num">{num}</div>'
-            f'<div class="stat-lbl">{lbl}</div></div>',
-            unsafe_allow_html=True,
-        )
-
     if not reports:
         st.info("No reports indexed yet.")
         return
 
-    st.divider()
+    # ── Compute aggregates ────────────────────────────────────────────────────
+    by_sdg: dict      = {}
+    by_thematic: dict = {}
+    for r in reports:
+        t = r.get("thematic_category") or "Unknown"
+        by_thematic[t] = by_thematic.get(t, 0) + 1
+        for s in (r.get("sdgs") or []):
+            by_sdg[f"SDG {s}"] = by_sdg.get(f"SDG {s}", 0) + 1
 
-    # ── SDG coverage row ──────────────────────────────────────────────────────
-    st.markdown("#### SDG Coverage")
-    sdg_badge_grid = ""
+    sdg_count = len(by_sdg)
+    countries  = list(set(r.get("country","") for r in reports if r.get("country")))
+    avg_rating = sum(float(r["evaluation_rating"]) for r in reports if r.get("evaluation_rating")) / max(len([r for r in reports if r.get("evaluation_rating")]),1)
+
+    # ── KPI Banner ────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="background:#003DA5;border-radius:10px;padding:1rem 1.5rem;
+                display:flex;gap:0;margin-bottom:1rem;">
+    """, unsafe_allow_html=True)
+
+    kpis = [
+        (str(len(reports)), "Evaluation Reports", "#60a5fa"),
+        (str(sdg_count),    "SDGs Covered",       "#34d399"),
+        (str(len(countries)),"Countries",          "#fbbf24"),
+        (f"{avg_rating:.1f}/6", "Avg. Rating",    "#f87171"),
+        (str(len(by_thematic)),"Thematic Areas",  "#a78bfa"),
+    ]
+    cols = st.columns(5)
+    for col, (num, lbl, color) in zip(cols, kpis):
+        col.markdown(
+            f'<div style="background:rgba(255,255,255,0.08);border-radius:8px;'
+            f'padding:0.9rem 0.5rem;text-align:center;border-left:4px solid {color};">'
+            f'<div style="font-size:1.9rem;font-weight:800;color:{color};line-height:1;">{num}</div>'
+            f'<div style="font-size:0.72rem;color:#cbd5e1;margin-top:4px;text-transform:uppercase;'
+            f'letter-spacing:0.05em;">{lbl}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    # ── Row 1: SDG Coverage strip ─────────────────────────────────────────────
+    st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#003DA5;'
+                'text-transform:uppercase;letter-spacing:0.06em;margin:0.5rem 0 0.4rem;">SDG Coverage</div>',
+                unsafe_allow_html=True)
+    sdg_strip = ""
     for n in range(1, 18):
         count = by_sdg.get(f"SDG {n}", 0)
-        opacity = "1.0" if count > 0 else "0.2"
-        sdg_badge_grid += (
+        opacity = "1.0" if count > 0 else "0.18"
+        sdg_strip += (
             f'<span style="display:inline-flex;flex-direction:column;align-items:center;'
-            f'margin:3px;opacity:{opacity};" title="SDG {n}: {SDG_NAMES[n]} — {count} reports">'
-            f'{sdg_badge_html(n, 46)}'
-            f'<span style="font-size:9px;color:#6b7280;margin-top:2px;">{count}</span>'
+            f'margin:2px;opacity:{opacity};" title="SDG {n}: {SDG_NAMES[n]} — {count} report(s)">'
+            f'{sdg_badge_html(n, 44)}'
+            f'<span style="font-size:8.5px;color:#374151;font-weight:600;margin-top:2px;">{count if count else "·"}</span>'
             f'</span>'
         )
-    st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:1px;">{sdg_badge_grid}</div>',
-        unsafe_allow_html=True,
+    st.markdown(f'<div style="background:#f8faff;border-radius:8px;padding:0.6rem 0.8rem;">'
+                f'<div style="display:flex;flex-wrap:wrap;gap:2px;">{sdg_strip}</div></div>',
+                unsafe_allow_html=True)
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    # ── Row 2: Ratings | Thematic | SDG bar ──────────────────────────────────
+    col_r, col_t, col_s = st.columns([1.1, 1, 1])
+
+    with col_r:
+        st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#003DA5;'
+                    'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem;">'
+                    'Evaluation Ratings</div>', unsafe_allow_html=True)
+        rated = [(r.get("title","")[:28], float(r["evaluation_rating"]),
+                  r.get("overall_rating_label","")) for r in reports if r.get("evaluation_rating")]
+        if rated:
+            labels = [x[0] for x in rated]
+            vals   = [x[1] for x in rated]
+            clrs   = ["#22c55e" if v >= 4.5 else ("#f59e0b" if v >= 3.0 else "#ef4444") for v in vals]
+            hover  = [f"<b>{x[0]}</b><br>Rating: {x[1]:.1f}/6<br>{x[2]}" for x in rated]
+            fig = go.Figure(go.Bar(
+                y=labels, x=vals, orientation="h",
+                marker_color=clrs,
+                text=[f"{v:.1f}" for v in vals],
+                textposition="outside",
+                hovertext=hover, hoverinfo="text",
+            ))
+            fig.update_layout(
+                height=220, margin=dict(t=5,b=5,l=5,r=40),
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(range=[0,7], showgrid=True, gridcolor="#f0f0f0",
+                           title="Rating (1–6)", titlefont=dict(size=10)),
+                yaxis=dict(tickfont=dict(size=9)),
+                font=dict(size=10),
+            )
+            fig.add_vline(x=4.0, line_dash="dot", line_color="#9ca3af", line_width=1)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    with col_t:
+        st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#003DA5;'
+                    'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem;">'
+                    'Thematic Areas</div>', unsafe_allow_html=True)
+        if by_thematic:
+            theme_palette = ["#003DA5","#009EDB","#4CAF50","#FF9800","#9C27B0","#E91E63","#00BCD4"]
+            fig = go.Figure(go.Pie(
+                labels=list(by_thematic.keys()),
+                values=list(by_thematic.values()),
+                hole=0.45,
+                marker=dict(colors=theme_palette[:len(by_thematic)],
+                            line=dict(color="white", width=2)),
+                textinfo="label+percent",
+                textfont=dict(size=9),
+                hovertemplate="<b>%{label}</b><br>%{value} report(s)<extra></extra>",
+            ))
+            fig.update_layout(
+                height=220, margin=dict(t=5,b=5,l=5,r=5),
+                paper_bgcolor="rgba(0,0,0,0)",
+                showlegend=False,
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    with col_s:
+        st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#003DA5;'
+                    'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem;">'
+                    'SDG Frequency</div>', unsafe_allow_html=True)
+        if by_sdg:
+            top = sorted(by_sdg.items(), key=lambda x: -x[1])[:8]
+            slabels = [x[0] for x in top]
+            svals   = [x[1] for x in top]
+            scolors = [SDG_COLORS.get(int(l.split()[1]), "#009EDB") for l in slabels]
+            fig = go.Figure(go.Bar(
+                y=slabels, x=svals, orientation="h",
+                marker_color=scolors,
+                text=svals, textposition="outside",
+                hovertemplate="%{y}: %{x} report(s)<extra></extra>",
+            ))
+            fig.update_layout(
+                height=220, margin=dict(t=5,b=5,l=5,r=30),
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(showgrid=True, gridcolor="#f0f0f0", title="Reports"),
+                yaxis=dict(tickfont=dict(size=9)),
+                font=dict(size=10),
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+    # ── Row 3: Per-report detail table ────────────────────────────────────────
+    st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#003DA5;'
+                'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem;">'
+                'Report Portfolio Overview</div>', unsafe_allow_html=True)
+
+    def _rating_color_cell(val):
+        if val is None: return "background-color:#f3f4f6;color:#9ca3af"
+        v = float(val)
+        if v >= 4.5: return "background-color:#dcfce7;color:#166534;font-weight:700"
+        if v >= 3.0: return "background-color:#fef9c3;color:#713f12;font-weight:700"
+        return "background-color:#fee2e2;color:#991b1b;font-weight:700"
+
+    rows = []
+    for r in reports:
+        rating_val = r.get("evaluation_rating")
+        rows.append({
+            "Title": (r.get("title",""))[:55] + ("…" if len(r.get("title","")) > 55 else ""),
+            "Country": r.get("country","—"),
+            "Year": r.get("year","—"),
+            "Thematic Area": r.get("thematic_category","—"),
+            "SDGs": ", ".join(f"SDG {s}" for s in sorted(r.get("sdgs") or [])),
+            "Donor": r.get("donor","—"),
+            "Rating": f"{float(rating_val):.1f}/6" if rating_val else "N/A",
+            "Verdict": r.get("overall_rating_label","—"),
+        })
+
+    df = pd.DataFrame(rows)
+
+    def _style_row(row):
+        rating_str = row.get("Rating","")
+        try:
+            v = float(rating_str.replace("/6",""))
+            if v >= 4.5: bg = "#dcfce7"
+            elif v >= 3.0: bg = "#fef9c3"
+            else: bg = "#fee2e2"
+        except Exception:
+            bg = "#f9fafb"
+        return [f"background-color:{bg}" if col == "Rating" else "" for col in row.index]
+
+    styled = df.style.apply(_style_row, axis=1).set_properties(**{
+        "font-size": "13px",
+        "text-align": "left",
+    }).set_table_styles([{
+        "selector": "th",
+        "props": [("background-color","#003DA5"),("color","white"),
+                  ("font-size","12px"),("font-weight","600"),
+                  ("text-transform","uppercase"),("letter-spacing","0.04em"),
+                  ("padding","6px 10px")],
+    },{
+        "selector": "td",
+        "props": [("padding","6px 10px"),("border-bottom","1px solid #f0f0f0")],
+    }])
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # ── Report Infographic Generator ──────────────────────────────────────────
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#003DA5;'
+                'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.6rem;">'
+                '📊 Report Infographic</div>', unsafe_allow_html=True)
+
+    infog_col1, infog_col2 = st.columns([3, 1])
+    with infog_col1:
+        report_options = {r["report_id"]: f"{r.get('year','')} — {r.get('title','')[:70]}"
+                         for r in reports}
+        infog_rid = st.selectbox(
+            "Select report",
+            list(report_options.keys()),
+            format_func=lambda x: report_options.get(x, x),
+            key="infog_report_sel",
+            label_visibility="collapsed",
+        )
+    with infog_col2:
+        gen_btn = st.button("✨ Generate Infographic", type="primary",
+                            use_container_width=True, key="infog_gen_btn")
+
+    if gen_btn and infog_rid:
+        with st.spinner("Claude is extracting insights and building your infographic…"):
+            try:
+                png_bytes = _build_report_infographic(infog_rid)
+                st.session_state[f"infog_png_{infog_rid}"] = png_bytes
+            except Exception as e:
+                st.error(f"Infographic error: {e}")
+                import traceback; st.code(traceback.format_exc())
+
+    cached_png = st.session_state.get(f"infog_png_{infog_rid}")
+    if cached_png:
+        st.image(cached_png, use_container_width=True)
+        dl_col, regen_col, _ = st.columns([2, 1, 3])
+        with dl_col:
+            st.download_button(
+                "⬇ Download PNG",
+                data=cached_png,
+                file_name=f"UNIDO_{infog_rid}_Infographic.png",
+                mime="image/png",
+                use_container_width=True,
+            )
+        with regen_col:
+            if st.button("↺ Regenerate", key="infog_regen", use_container_width=True):
+                del st.session_state[f"infog_png_{infog_rid}"]
+                st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INFOGRAPHIC ENGINE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_infographic_data(rid: str) -> dict:
+    """Call Claude to extract structured infographic data from report text."""
+    import anthropic as _anthropic
+
+    ai  = _load_ai_extraction(rid)
+    sec = _load_sections_local(rid)
+    pilot = PILOT_METADATA.get(rid, {})
+
+    exec_sum  = ai.get("executive_summary", "")
+    secs_data = sec.get("sections", {})
+    concl     = secs_data.get("conclusions", "")
+    findings  = secs_data.get("findings", "") or secs_data.get("results", "")
+    lessons   = ai.get("lessons_learned") or []
+    recs      = ai.get("recommendations") or []
+
+    body = "\n\n".join(filter(None, [
+        f"EXECUTIVE SUMMARY:\n{exec_sum[:2000]}",
+        f"CONCLUSIONS:\n{concl[:3000]}",
+        f"KEY FINDINGS / RESULTS:\n{findings[:2000]}",
+        f"LESSONS LEARNED:\n" + "\n".join(f"- {l}" for l in lessons[:6]),
+        f"RECOMMENDATIONS:\n" + "\n".join(f"- {r}" for r in recs[:6]),
+    ]))
+
+    prompt = f"""You are a UNIDO evaluation analyst. Read this evaluation report excerpt and return ONLY a valid JSON object — no markdown fences, no explanation.
+
+REPORT TEXT:
+{body}
+
+Return this exact JSON structure (use null for any field you cannot determine):
+{{
+  "dac_relevance":      "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
+  "dac_effectiveness":  "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
+  "dac_efficiency":     "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
+  "dac_impact":         "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
+  "dac_sustainability": "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
+  "enablers": ["enabling factor 1 (max 12 words)", "enabling factor 2", "enabling factor 3", "enabling factor 4"],
+  "barriers": ["barrier 1 (max 12 words)", "barrier 2", "barrier 3", "barrier 4"],
+  "gender_mainstreaming": "2-3 sentence summary of how gender was addressed (or note if not addressed)",
+  "gender_rating": "Mainstreamed|Partially Mainstreamed|Not Mainstreamed",
+  "start_year": 2016,
+  "end_year": 2022,
+  "planned_duration_years": 4,
+  "actual_duration_years": 6,
+  "delay_notes": "one sentence on delays, or null if none"
+}}"""
+
+    try:
+        api_key = st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    msg = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=1024,
+        temperature=0,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = msg.content[0].text.strip()
+    # strip markdown fences if present
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw.strip())
+
+
+def _build_report_infographic(rid: str) -> bytes:
+    """Extract data via Claude then render professional matplotlib infographic."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    import matplotlib.gridspec as gridspec
+    import textwrap, io
+
+    # ── Gather all data ───────────────────────────────────────────────────────
+    ai    = _load_ai_extraction(rid)
+    sec   = _load_sections_local(rid)
+    pilot = PILOT_METADATA.get(rid, {})
+    ctx   = ai.get("context", {})
+
+    title    = ctx.get("title") or pilot.get("title", "Evaluation Report")
+    year     = ctx.get("year") or pilot.get("year", "")
+    country  = ctx.get("country") or pilot.get("country", "")
+    region   = ctx.get("region") or pilot.get("region", "")
+    rtype    = ctx.get("report_type") or pilot.get("report_type", "Terminal Evaluation")
+    rating   = ctx.get("evaluation_rating") or pilot.get("evaluation_rating")
+    budget   = ctx.get("budget_usd") or pilot.get("budget_usd")
+    donor    = ctx.get("donor") or pilot.get("donor", "")
+    proj_id  = ctx.get("project_id") or pilot.get("project_id", "")
+    thematic = ai.get("primary_thematic_area") or pilot.get("thematic_category", "")
+    sdg_nums = sorted(
+        [int(k) for k in ai.get("sdg_mapping", {}).keys() if str(k).isdigit()] or
+        [int(s) for s in (pilot.get("sdgs") or []) if str(s).isdigit()]
+    )
+    lessons = (ai.get("lessons_learned") or pilot.get("lessons_learned") or [])
+    recs    = (ai.get("recommendations") or pilot.get("recommendations") or [])
+
+    # Claude-extracted structured data
+    ex = _extract_infographic_data(rid)
+
+    # ── Colour helpers ────────────────────────────────────────────────────────
+    C_BLUE   = "#003DA5"
+    C_LBLUE  = "#009EDB"
+    C_WHITE  = "#FFFFFF"
+    C_BG     = "#F5F7FA"
+    C_DARK   = "#1a1a2e"
+    C_GREEN  = "#166534"
+    C_RED    = "#991b1b"
+
+    DAC_COLOR = {
+        "Highly Satisfactory":       "#16a34a",
+        "Satisfactory":              "#22c55e",
+        "Moderately Satisfactory":   "#84cc16",
+        "Moderately Unsatisfactory": "#f59e0b",
+        "Unsatisfactory":            "#ef4444",
+        "Highly Unsatisfactory":     "#dc2626",
+        "Not Assessed":              "#9ca3af",
+    }
+    DAC_SCORE = {
+        "Highly Satisfactory": 6, "Satisfactory": 5, "Moderately Satisfactory": 4,
+        "Moderately Unsatisfactory": 3, "Unsatisfactory": 2,
+        "Highly Unsatisfactory": 1, "Not Assessed": 0,
+    }
+    SDG_COL = {
+        1:"#E5243B",2:"#DDA63A",3:"#4C9F38",4:"#C5192D",5:"#FF3A21",
+        6:"#26BDE2",7:"#FCC30B",8:"#A21942",9:"#FD6925",10:"#DD1367",
+        11:"#FD9D24",12:"#BF8B2E",13:"#3F7E44",14:"#0A97D9",15:"#56C02B",
+        16:"#00689D",17:"#19486A",
+    }
+    GENDER_COLOR = {
+        "Mainstreamed":           "#16a34a",
+        "Partially Mainstreamed": "#f59e0b",
+        "Not Mainstreamed":       "#ef4444",
+    }
+
+    rating_label = "N/A"; rating_color = "#9ca3af"
+    if rating:
+        rv = float(rating)
+        if rv >= 5.0:   rating_label, rating_color = "Highly Satisfactory", "#16a34a"
+        elif rv >= 4.0: rating_label, rating_color = "Satisfactory",        "#22c55e"
+        elif rv >= 3.0: rating_label, rating_color = "Mod. Satisfactory",   "#84cc16"
+        else:           rating_label, rating_color = "Unsatisfactory",      "#ef4444"
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig = plt.figure(figsize=(20, 14.5), facecolor=C_WHITE, dpi=130)
+    fig.patch.set_facecolor(C_WHITE)
+
+    outer = gridspec.GridSpec(
+        5, 1, figure=fig,
+        height_ratios=[0.10, 0.09, 0.42, 0.22, 0.17],
+        hspace=0.018, left=0.015, right=0.985, top=0.985, bottom=0.015,
     )
 
-    st.divider()
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ROW 0 — HEADER
+    # ═══════════════════════════════════════════════════════════════════════════
+    ax_h = fig.add_subplot(outer[0])
+    ax_h.set_facecolor(C_BLUE); ax_h.axis("off")
+    ax_h.set_xlim(0,1); ax_h.set_ylim(0,1)
 
-    # ── Knowledge Graph ───────────────────────────────────────────────────────
-    st.markdown("#### Knowledge Graph — Portfolio Structure")
-    st.caption(
-        "**Squares** = thematic areas (colored). **Circles** = individual reports. "
-        "**Blue edges** = reports sharing ≥2 SDGs. Hover any node for details."
+    ax_h.text(0.011, 0.82, "UNIDO", fontsize=22, fontweight="bold",
+              color=C_WHITE, va="top", transform=ax_h.transAxes)
+    ax_h.text(0.011, 0.32, "Independent Evaluation Unit  ·  Evaluation Intelligence Platform",
+              fontsize=8, color="#93c5fd", va="top", transform=ax_h.transAxes)
+
+    short_title = textwrap.shorten(title, width=105, placeholder="…")
+    ax_h.text(0.16, 0.80, short_title, fontsize=12, fontweight="bold",
+              color=C_WHITE, va="top", transform=ax_h.transAxes)
+
+    meta_right = f"{rtype}  ·  {year}  ·  {country}  ·  {region}"
+    ax_h.text(0.988, 0.82, meta_right, fontsize=8, color="#93c5fd",
+              va="top", ha="right", transform=ax_h.transAxes)
+    if proj_id:
+        ax_h.text(0.988, 0.32, f"Project ID: {proj_id}", fontsize=8,
+                  color="#cbd5e1", va="top", ha="right", transform=ax_h.transAxes)
+
+    ax_h.axhline(0.0, color=C_LBLUE, linewidth=3)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ROW 1 — STAT CARDS
+    # ═══════════════════════════════════════════════════════════════════════════
+    stat_gs = gridspec.GridSpecFromSubplotSpec(1, 6, subplot_spec=outer[1], wspace=0.012)
+    stats = [
+        ("OVERALL RATING",
+         f"{float(rating):.1f}/6" if rating else "N/A",
+         rating_label, rating_color),
+        ("THEMATIC AREA",    textwrap.shorten(thematic or "—", 22, placeholder="…"), "", C_BLUE),
+        ("DONOR",            textwrap.shorten(donor or "—", 20, placeholder="…"),     "", C_LBLUE),
+        ("BUDGET",
+         f"USD {budget/1e6:.1f}M" if budget else "N/A",
+         "", "#7c3aed"),
+        ("SDGs COVERED",     str(len(sdg_nums)), f"goal{'s' if len(sdg_nums)!=1 else ''}", "#059669"),
+        ("GENDER",
+         (ex.get("gender_rating") or "N/A").replace("Partially ","Partly "),
+         "", GENDER_COLOR.get(ex.get("gender_rating",""), "#9ca3af")),
+    ]
+    for i, (lbl, val, sub, col) in enumerate(stats):
+        ax = fig.add_subplot(stat_gs[i])
+        ax.set_facecolor(C_BG); ax.axis("off")
+        ax.set_xlim(0,1); ax.set_ylim(0,1)
+        ax.add_patch(patches.Rectangle((0,0), 0.045, 1, color=col,
+                     transform=ax.transAxes, clip_on=False))
+        ax.text(0.11, 0.76, lbl, fontsize=6, color="#6b7280",
+                fontweight="bold", va="top", transform=ax.transAxes)
+        ax.text(0.11, 0.50, val, fontsize=10.5, color=C_DARK,
+                fontweight="bold", va="top", transform=ax.transAxes)
+        if sub:
+            ax.text(0.11, 0.14, sub, fontsize=7, color=col,
+                    va="bottom", transform=ax.transAxes, fontstyle="italic")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ROW 2 — MAIN 3-COLUMN CONTENT
+    # ═══════════════════════════════════════════════════════════════════════════
+    main_gs = gridspec.GridSpecFromSubplotSpec(
+        1, 3, subplot_spec=outer[2], wspace=0.012, width_ratios=[1.05, 1, 1]
     )
 
-    kg_fig = _build_knowledge_graph_figure(reports, by_sdg, by_thematic, by_year)
-    if kg_fig:
-        st.plotly_chart(kg_fig, use_container_width=True)
+    # ── LEFT: DAC CRITERIA ───────────────────────────────────────────────────
+    ax_dac = fig.add_subplot(main_gs[0])
+    ax_dac.set_facecolor(C_WHITE); ax_dac.axis("off")
+    ax_dac.set_xlim(0,1); ax_dac.set_ylim(0,1)
 
-    st.divider()
+    ax_dac.add_patch(patches.Rectangle((0,0.96),1,0.04, color=C_BLUE,
+                     transform=ax_dac.transAxes))
+    ax_dac.text(0.03, 0.984, "OECD-DAC EVALUATION CRITERIA", fontsize=8,
+                color=C_WHITE, fontweight="bold", va="top", transform=ax_dac.transAxes)
 
-    # ── Supporting charts ─────────────────────────────────────────────────────
-    with st.expander("📊 Portfolio Charts", expanded=True):
-        col_a, col_b = st.columns(2)
+    dac_fields = [
+        ("Relevance",      ex.get("dac_relevance",      "Not Assessed")),
+        ("Effectiveness",  ex.get("dac_effectiveness",  "Not Assessed")),
+        ("Efficiency",     ex.get("dac_efficiency",     "Not Assessed")),
+        ("Impact",         ex.get("dac_impact",         "Not Assessed")),
+        ("Sustainability", ex.get("dac_sustainability", "Not Assessed")),
+    ]
 
-        with col_a:
-            st.markdown("##### Thematic Distribution")
-            if by_thematic:
-                fig = px.pie(
-                    names=list(by_thematic.keys()),
-                    values=list(by_thematic.values()),
-                    color_discrete_sequence=px.colors.qualitative.Safe,
-                    hole=0.35,
-                )
-                fig.update_traces(textposition="inside", textinfo="percent+label")
-                fig.update_layout(
-                    showlegend=False, margin=dict(t=10,b=10,l=10,r=10),
-                    height=300, paper_bgcolor="rgba(0,0,0,0)",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    bar_ax = ax_dac.inset_axes([0.03, 0.05, 0.94, 0.87], transform=ax_dac.transAxes)
+    bar_ax.set_facecolor(C_WHITE)
+    criteria_labels = [d[0] for d in dac_fields]
+    criteria_scores = [DAC_SCORE.get(d[1], 0) for d in dac_fields]
+    criteria_colors = [DAC_COLOR.get(d[1], "#9ca3af") for d in dac_fields]
+    verdicts        = [d[1] for d in dac_fields]
 
-        with col_b:
-            st.markdown("##### Reports by Year")
-            if by_year:
-                years = sorted(by_year.keys())
-                fig = go.Figure(go.Bar(
-                    x=years, y=[by_year[y] for y in years],
-                    marker_color="#009EDB",
-                    text=[by_year[y] for y in years], textposition="outside",
-                ))
-                fig.update_layout(
-                    margin=dict(t=10,b=10,l=10,r=10), height=300,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    xaxis_title="Year", yaxis_title="Reports",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    bars = bar_ax.barh(criteria_labels[::-1], criteria_scores[::-1],
+                       color=criteria_colors[::-1], height=0.52,
+                       edgecolor="white", linewidth=0.8)
+    for bar, verdict, score in zip(bars, verdicts[::-1], criteria_scores[::-1]):
+        bar_ax.text(
+            min(score + 0.15, 6.3), bar.get_y() + bar.get_height()/2,
+            verdict, va="center", fontsize=7.5, color="#374151",
+            fontweight="600",
+        )
+    bar_ax.set_xlim(0, 8.5)
+    bar_ax.set_facecolor(C_BG)
+    bar_ax.tick_params(axis="y", labelsize=9, pad=4, labelcolor="#374151")
+    bar_ax.tick_params(axis="x", labelbottom=False, bottom=False)
+    bar_ax.spines["top"].set_visible(False)
+    bar_ax.spines["right"].set_visible(False)
+    bar_ax.spines["bottom"].set_visible(False)
+    bar_ax.spines["left"].set_color("#e5e7eb")
 
-        col_c, col_d = st.columns(2)
+    # Legend
+    legend_items = [
+        ("HS", "#16a34a"), ("S", "#22c55e"), ("MS", "#84cc16"),
+        ("MU", "#f59e0b"), ("U", "#ef4444"), ("HU", "#dc2626"),
+    ]
+    full_labels = ["Highly Satisfactory", "Satisfactory", "Moderately Satisfactory",
+                   "Moderately Unsatisfactory", "Unsatisfactory", "Highly Unsatisfactory"]
+    lx = 0.03; ly = 0.024
+    ax_dac.text(lx, ly, "Scale: ", fontsize=6, color="#6b7280",
+                va="bottom", transform=ax_dac.transAxes)
+    lx += 0.09
+    for abbr, col in legend_items:
+        ax_dac.add_patch(patches.Rectangle((lx, ly-0.008), 0.045, 0.024,
+                         color=col, transform=ax_dac.transAxes))
+        ax_dac.text(lx+0.048, ly, abbr, fontsize=5.5, color="#374151",
+                    va="bottom", transform=ax_dac.transAxes)
+        lx += 0.115
 
-        with col_c:
-            st.markdown("##### SDG Coverage (Top 10)")
-            if by_sdg:
-                top_sdg = sorted(by_sdg.items(), key=lambda x: -x[1])[:10]
-                sdg_labels = [x[0] for x in top_sdg]
-                sdg_vals   = [x[1] for x in top_sdg]
-                sdg_colors_bar = [SDG_COLORS.get(int(l.split()[-1]), "#009EDB") for l in sdg_labels]
-                fig = go.Figure(go.Bar(
-                    y=sdg_labels, x=sdg_vals, orientation="h",
-                    marker_color=sdg_colors_bar,
-                    text=sdg_vals, textposition="outside",
-                ))
-                fig.update_layout(
-                    margin=dict(t=10,b=10,l=10,r=10), height=320,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    # ── MIDDLE: ENABLERS & BARRIERS ──────────────────────────────────────────
+    ax_eb = fig.add_subplot(main_gs[1])
+    ax_eb.set_facecolor(C_WHITE); ax_eb.axis("off")
+    ax_eb.set_xlim(0,1); ax_eb.set_ylim(0,1)
 
-        with col_d:
-            st.markdown("##### DAC Criteria Coverage")
-            if by_dac:
-                dac_keys = [k.replace("_"," ").title() for k in by_dac.keys()]
-                dac_vals = list(by_dac.values())
-                fig = go.Figure(go.Bar(
-                    x=dac_keys, y=dac_vals,
-                    marker_color=DAC_COLORS[:len(dac_keys)],
-                    text=dac_vals, textposition="outside",
-                ))
-                fig.update_layout(
-                    margin=dict(t=10,b=10,l=10,r=10), height=320,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    yaxis_title="Reports with evidence",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    ax_eb.add_patch(patches.Rectangle((0,0.96),1,0.04, color="#0369a1",
+                    transform=ax_eb.transAxes))
+    ax_eb.text(0.03, 0.984, "ENABLERS & BARRIERS", fontsize=8,
+               color=C_WHITE, fontweight="bold", va="top", transform=ax_eb.transAxes)
 
-        # Ratings + Thematic row
-        col_e, col_f = st.columns(2)
-        with col_e:
-            st.markdown("##### Evaluation Ratings")
-            ratings_data = [(r.get("title","")[:30], r.get("evaluation_rating")) for r in reports if r.get("evaluation_rating")]
-            if ratings_data:
-                titles_r = [x[0] for x in ratings_data]
-                vals_r   = [float(x[1]) for x in ratings_data]
-                colors_r = ["#22c55e" if v >= 4.5 else ("#f59e0b" if v >= 3.0 else "#ef4444") for v in vals_r]
-                fig = go.Figure(go.Bar(
-                    x=titles_r, y=vals_r,
-                    marker_color=colors_r,
-                    text=[f"{v:.1f}" for v in vals_r], textposition="outside",
-                ))
-                fig.update_layout(
-                    margin=dict(t=10,b=40,l=10,r=10), height=320,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    yaxis=dict(title="Rating (1–6)", range=[0, 6.5]),
-                    xaxis=dict(tickangle=-20),
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    enablers = (ex.get("enablers") or [])[:4]
+    barriers = (ex.get("barriers") or [])[:4]
 
-        with col_f:
-            st.markdown("##### SDG Alignment by Report")
-            if reports:
-                rep_names = [r.get("title","")[:25] for r in reports]
-                sdg_counts_per_rep = [len(r.get("sdgs") or []) for r in reports]
-                fig = go.Figure(go.Bar(
-                    x=rep_names, y=sdg_counts_per_rep,
-                    marker_color="#009EDB",
-                    text=sdg_counts_per_rep, textposition="outside",
-                ))
-                fig.update_layout(
-                    margin=dict(t=10,b=40,l=10,r=10), height=320,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    yaxis=dict(title="Number of SDGs"),
-                    xaxis=dict(tickangle=-20),
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    # Enablers section
+    ax_eb.add_patch(patches.FancyBboxPatch((0.01, 0.77), 0.98, 0.165,
+                    boxstyle="round,pad=0.01", linewidth=0,
+                    facecolor="#dcfce7", transform=ax_eb.transAxes))
+    ax_eb.text(0.04, 0.924, "✅  ENABLERS", fontsize=7.5, color="#166534",
+               fontweight="bold", va="top", transform=ax_eb.transAxes)
+    y = 0.895
+    for item in enablers:
+        wrapped = textwrap.fill(f"▸  {item}", width=48)
+        n_lines = wrapped.count("\n") + 1
+        ax_eb.text(0.04, y, wrapped, fontsize=7, color="#14532d",
+                   va="top", transform=ax_eb.transAxes, linespacing=1.4)
+        y -= n_lines * 0.044 + 0.008
+        if y < 0.78: break
+
+    # Barriers section
+    ax_eb.add_patch(patches.FancyBboxPatch((0.01, 0.42), 0.98, 0.34,
+                    boxstyle="round,pad=0.01", linewidth=0,
+                    facecolor="#fee2e2", transform=ax_eb.transAxes))
+    ax_eb.text(0.04, 0.745, "⚠️  BARRIERS & CHALLENGES", fontsize=7.5,
+               color="#991b1b", fontweight="bold", va="top", transform=ax_eb.transAxes)
+    y = 0.715
+    for item in barriers:
+        wrapped = textwrap.fill(f"▸  {item}", width=48)
+        n_lines = wrapped.count("\n") + 1
+        ax_eb.text(0.04, y, wrapped, fontsize=7, color="#7f1d1d",
+                   va="top", transform=ax_eb.transAxes, linespacing=1.4)
+        y -= n_lines * 0.044 + 0.008
+        if y < 0.43: break
+
+    # Gender mainstreaming section
+    ax_eb.add_patch(patches.FancyBboxPatch((0.01, 0.01), 0.98, 0.40,
+                    boxstyle="round,pad=0.01", linewidth=0,
+                    facecolor="#ede9fe", transform=ax_eb.transAxes))
+    gender_col = GENDER_COLOR.get(ex.get("gender_rating",""), "#7c3aed")
+    ax_eb.text(0.04, 0.393, "♀  GENDER MAINSTREAMING", fontsize=7.5,
+               color="#5b21b6", fontweight="bold", va="top", transform=ax_eb.transAxes)
+    ax_eb.add_patch(patches.FancyBboxPatch(
+        (0.04, 0.332), 0.48, 0.042,
+        boxstyle="round,pad=0.006", linewidth=0,
+        facecolor=gender_col, transform=ax_eb.transAxes
+    ))
+    ax_eb.text(0.28, 0.353, ex.get("gender_rating") or "N/A",
+               fontsize=7, color="white", fontweight="bold",
+               ha="center", va="center", transform=ax_eb.transAxes)
+    gender_text = ex.get("gender_mainstreaming") or "No specific gender mainstreaming information available."
+    gw = textwrap.fill(gender_text[:320], width=52)
+    ax_eb.text(0.04, 0.320, gw, fontsize=6.8, color="#4c1d95",
+               va="top", transform=ax_eb.transAxes, linespacing=1.4)
+
+    # ── RIGHT: GEOGRAPHIC COVERAGE + SDGs ────────────────────────────────────
+    ax_geo = fig.add_subplot(main_gs[2])
+    ax_geo.set_facecolor(C_WHITE); ax_geo.axis("off")
+    ax_geo.set_xlim(0,1); ax_geo.set_ylim(0,1)
+
+    ax_geo.add_patch(patches.Rectangle((0,0.96),1,0.04, color="#059669",
+                     transform=ax_geo.transAxes))
+    ax_geo.text(0.03, 0.984, "GEOGRAPHIC COVERAGE & SDG ALIGNMENT", fontsize=8,
+                color=C_WHITE, fontweight="bold", va="top", transform=ax_geo.transAxes)
+
+    # Country / Region block
+    ax_geo.add_patch(patches.FancyBboxPatch((0.01, 0.77), 0.98, 0.175,
+                     boxstyle="round,pad=0.01", linewidth=0,
+                     facecolor="#ecfdf5", transform=ax_geo.transAxes))
+    ax_geo.text(0.06, 0.930, "🌍  Country / Region", fontsize=7.5, color="#065f46",
+                fontweight="bold", va="top", transform=ax_geo.transAxes)
+    ax_geo.text(0.06, 0.895, country or "—", fontsize=11.5, color=C_DARK,
+                fontweight="bold", va="top", transform=ax_geo.transAxes)
+    ax_geo.text(0.06, 0.855, region or "—", fontsize=8.5, color="#065f46",
+                va="top", transform=ax_geo.transAxes)
+
+    # SDG tiles
+    ax_geo.text(0.04, 0.752, "SDG Alignment", fontsize=7.5, color="#374151",
+                fontweight="bold", va="top", transform=ax_geo.transAxes)
+
+    cols_per_row = 5
+    tile_w, tile_h = 0.165, 0.095
+    gap_x, gap_y  = 0.022, 0.012
+    sx, sy = 0.03, 0.73
+    for idx, n in enumerate(sdg_nums[:15]):
+        row = idx // cols_per_row
+        col = idx % cols_per_row
+        x = sx + col * (tile_w + gap_x)
+        y = sy - row * (tile_h + gap_y)
+        c = SDG_COL.get(n, "#888")
+        ax_geo.add_patch(patches.FancyBboxPatch(
+            (x, y - tile_h), tile_w, tile_h,
+            boxstyle="round,pad=0.008", linewidth=0, facecolor=c,
+            transform=ax_geo.transAxes,
+        ))
+        ax_geo.text(x + tile_w/2, y - tile_h/2, f"SDG\n{n}",
+                    fontsize=6.5, color="white", fontweight="bold",
+                    ha="center", va="center", transform=ax_geo.transAxes)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ROW 3 — TIMELINE + LESSONS + RECOMMENDATIONS
+    # ═══════════════════════════════════════════════════════════════════════════
+    bot_gs = gridspec.GridSpecFromSubplotSpec(
+        1, 3, subplot_spec=outer[3], wspace=0.012, width_ratios=[1, 1, 1]
+    )
+
+    # ── Timeline ─────────────────────────────────────────────────────────────
+    ax_tl = fig.add_subplot(bot_gs[0])
+    ax_tl.set_facecolor(C_WHITE); ax_tl.axis("off")
+    ax_tl.set_xlim(0,1); ax_tl.set_ylim(0,1)
+
+    ax_tl.add_patch(patches.Rectangle((0,0.92),1,0.08, color="#7c3aed",
+                    transform=ax_tl.transAxes))
+    ax_tl.text(0.04, 0.96, "PROJECT TIMELINE", fontsize=8, color=C_WHITE,
+               fontweight="bold", va="center", transform=ax_tl.transAxes)
+
+    s_yr = ex.get("start_year")
+    e_yr = ex.get("end_year")
+    p_dur = ex.get("planned_duration_years")
+    a_dur = ex.get("actual_duration_years")
+    delay_note = ex.get("delay_notes")
+
+    tl_ax = ax_tl.inset_axes([0.04, 0.28, 0.92, 0.58], transform=ax_tl.transAxes)
+    tl_ax.set_facecolor(C_BG)
+    tl_ax.set_xlim(0, 10); tl_ax.set_ylim(-0.5, 2)
+    tl_ax.axis("off")
+
+    if p_dur and a_dur and s_yr:
+        # Planned bar
+        tl_ax.add_patch(patches.FancyBboxPatch(
+            (0, 1.1), p_dur * (9.0 / max(a_dur, p_dur, 1)), 0.6,
+            boxstyle="round,pad=0.1", linewidth=0, facecolor="#22c55e", alpha=0.85
+        ))
+        tl_ax.text(0.1, 1.4, f"Planned: {p_dur}y", fontsize=7, color="white",
+                   fontweight="bold", va="center")
+
+        # Actual bar
+        actual_col = "#ef4444" if a_dur > p_dur else "#22c55e"
+        tl_ax.add_patch(patches.FancyBboxPatch(
+            (0, 0.3), a_dur * (9.0 / max(a_dur, p_dur, 1)), 0.6,
+            boxstyle="round,pad=0.1", linewidth=0, facecolor=actual_col, alpha=0.85
+        ))
+        tl_ax.text(0.1, 0.6, f"Actual: {a_dur}y", fontsize=7, color="white",
+                   fontweight="bold", va="center")
+
+        # Year labels
+        tl_ax.text(0, -0.2, str(s_yr), fontsize=7, ha="center", color="#374151")
+        if e_yr:
+            tl_ax.text(a_dur * (9.0 / max(a_dur, p_dur, 1)),
+                       -0.2, str(e_yr), fontsize=7, ha="center", color="#374151")
+        if a_dur > p_dur:
+            delay_yrs = a_dur - p_dur
+            tl_ax.text(5, -0.35, f"⚠ {delay_yrs} year(s) over schedule",
+                       fontsize=7, ha="center", color="#dc2626", fontweight="bold")
+    else:
+        tl_ax.text(4.5, 0.75, "Timeline data not available\nin source report",
+                   fontsize=8, ha="center", color="#9ca3af", va="center")
+
+    if delay_note:
+        dw = textwrap.fill(delay_note[:140], width=48)
+        ax_tl.text(0.04, 0.235, dw, fontsize=6.5, color="#374151",
+                   va="top", transform=ax_tl.transAxes, linespacing=1.35)
+
+    # ── Lessons Learned ───────────────────────────────────────────────────────
+    ax_ll = fig.add_subplot(bot_gs[1])
+    ax_ll.set_facecolor(C_WHITE); ax_ll.axis("off")
+    ax_ll.set_xlim(0,1); ax_ll.set_ylim(0,1)
+
+    ax_ll.add_patch(patches.Rectangle((0,0.92),1,0.08, color="#0369a1",
+                    transform=ax_ll.transAxes))
+    ax_ll.text(0.04, 0.96, "KEY LESSONS LEARNED", fontsize=8, color=C_WHITE,
+               fontweight="bold", va="center", transform=ax_ll.transAxes)
+
+    y = 0.88
+    for i, lesson in enumerate(lessons[:4], 1):
+        w = textwrap.fill(f"{i}.  {lesson}", width=55)
+        n = w.count("\n") + 1
+        ax_ll.add_patch(patches.FancyBboxPatch(
+            (0.01, y - 0.006 - n * 0.052), 0.98, n * 0.052 + 0.012,
+            boxstyle="round,pad=0.006", linewidth=0,
+            facecolor="#e0f2fe", transform=ax_ll.transAxes,
+        ))
+        ax_ll.text(0.04, y, w, fontsize=6.7, color="#0c4a6e",
+                   va="top", transform=ax_ll.transAxes, linespacing=1.4)
+        y -= n * 0.054 + 0.022
+        if y < 0.02: break
+
+    # ── Recommendations ───────────────────────────────────────────────────────
+    ax_rec = fig.add_subplot(bot_gs[2])
+    ax_rec.set_facecolor(C_WHITE); ax_rec.axis("off")
+    ax_rec.set_xlim(0,1); ax_rec.set_ylim(0,1)
+
+    ax_rec.add_patch(patches.Rectangle((0,0.92),1,0.08, color="#9a3412",
+                     transform=ax_rec.transAxes))
+    ax_rec.text(0.04, 0.96, "KEY RECOMMENDATIONS", fontsize=8, color=C_WHITE,
+                fontweight="bold", va="center", transform=ax_rec.transAxes)
+
+    y = 0.88
+    for i, rec in enumerate(recs[:4], 1):
+        w = textwrap.fill(f"{i}.  {rec}", width=55)
+        n = w.count("\n") + 1
+        ax_rec.add_patch(patches.FancyBboxPatch(
+            (0.01, y - 0.006 - n * 0.052), 0.98, n * 0.052 + 0.012,
+            boxstyle="round,pad=0.006", linewidth=0,
+            facecolor="#fff7ed", transform=ax_rec.transAxes,
+        ))
+        ax_rec.text(0.04, y, w, fontsize=6.7, color="#7c2d12",
+                    va="top", transform=ax_rec.transAxes, linespacing=1.4)
+        y -= n * 0.054 + 0.022
+        if y < 0.02: break
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ROW 4 — FOOTER
+    # ═══════════════════════════════════════════════════════════════════════════
+    ax_ft = fig.add_subplot(outer[4])
+    ax_ft.set_facecolor("#f8faff"); ax_ft.axis("off")
+    ax_ft.set_xlim(0,1); ax_ft.set_ylim(0,1)
+    ax_ft.axhline(1.0, color=C_LBLUE, linewidth=2)
+
+    # Thematic area badge
+    ax_ft.add_patch(patches.FancyBboxPatch(
+        (0.01, 0.55), 0.22, 0.38,
+        boxstyle="round,pad=0.01", linewidth=0,
+        facecolor="#ede9fe", transform=ax_ft.transAxes,
+    ))
+    ax_ft.text(0.02, 0.90, "THEMATIC AREA", fontsize=6.5, color="#7c3aed",
+               fontweight="bold", va="top", transform=ax_ft.transAxes)
+    tw = textwrap.fill(thematic or "—", 28)
+    ax_ft.text(0.02, 0.72, tw, fontsize=9, color="#4c1d95",
+               fontweight="bold", va="top", transform=ax_ft.transAxes)
+
+    # UNEG note
+    uneg = (
+        "This infographic was produced in accordance with UNEG Norms and Standards for Evaluation. "
+        "Content is derived from the official UNIDO independent evaluation report. Findings, conclusions, "
+        "lessons and recommendations represent the views of independent evaluators and do not necessarily "
+        "reflect the position of UNIDO."
+    )
+    ax_ft.text(0.25, 0.88, textwrap.fill(uneg, width=100),
+               fontsize=6.5, color="#374151", va="top", transform=ax_ft.transAxes,
+               linespacing=1.4)
+    ax_ft.text(0.25, 0.22,
+               f"Source: UNIDO IEU Evaluation Portfolio  ·  Generated by UNIDO Evaluation Intelligence Platform  ·  {year}",
+               fontsize=6, color="#9ca3af", va="bottom", transform=ax_ft.transAxes)
+
+    # ── Save ──────────────────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=150, bbox_inches="tight",
+                facecolor=C_WHITE, edgecolor="none")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 4 — OECD-DAC Analysis
