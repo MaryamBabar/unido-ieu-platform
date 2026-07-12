@@ -2256,7 +2256,7 @@ def show_visualize_tab():
                             use_container_width=True, key="infog_gen_btn")
 
     if gen_btn and infog_rid:
-        with st.spinner("Building your infographic…"):
+        with st.spinner("Claude is extracting insights and building your infographic…"):
             try:
                 html_bytes = _build_report_infographic(infog_rid)
                 st.session_state[f"infog_html_{infog_rid}"] = html_bytes
@@ -2289,9 +2289,207 @@ def show_visualize_tab():
 # INFOGRAPHIC ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _find_pdf_path(rid: str) -> str:
+    import glob, os
+    base = os.path.join(os.path.dirname(__file__), "..", "data", "pdfs")
+    nums = rid.split("-")[-1]
+    for candidate in glob.glob(os.path.join(base, "**", f"*{nums}*.pdf"), recursive=True):
+        return candidate
+    return ""
+
+
+def _extract_rich_infographic_data(rid: str) -> dict:
+    """Extract rich infographic fields directly from the PDF. Cached in ai_extractions JSON."""
+    import re as _re, json as _json, os as _os
+
+    ai_path = _os.path.join(_os.path.dirname(__file__), "..", "data",
+                            "ai_extractions", f"{rid}.json")
+    cached_ai = {}
+    if _os.path.exists(ai_path):
+        try:
+            with open(ai_path, "r", encoding="utf-8") as f:
+                cached_ai = _json.load(f)
+            if "infographic_data" in cached_ai:
+                return cached_ai["infographic_data"]
+        except Exception:
+            pass
+
+    pdf_path = _find_pdf_path(rid)
+    if not pdf_path:
+        return {}
+
+    try:
+        import pdfplumber as _plumber
+        with _plumber.open(pdf_path) as pdf:
+            full_text = "\n".join((p.extract_text() or "") for p in pdf.pages)
+    except Exception:
+        return {}
+
+    result: dict = {}
+
+    # GEF ID
+    for pat in [
+        r'GEF[-\s]?ID[-:\s]+(\d{4,6})',
+        r'GEF%20ID-(\d{4,6})',
+        r'GEF\s+project\s+(?:id|no\.?)\s*[:\-]?\s*(\d{4,6})',
+    ]:
+        m = _re.search(pat, full_text, _re.IGNORECASE)
+        if m:
+            result["gef_id"] = m.group(1)
+            break
+
+    # Planned duration in months
+    for pat in [
+        r'(?:approved|designed?|planned).*?(?:for a period of|over|duration of)\s+(\d+)\s*months?',
+        r'(?:period of|over)\s+(\d+)\s*months?\s*(?:of\s+)?(?:implementation|project)',
+        r'(\d+)[\s-]month\s+(?:implementation\s+)?(?:project|period)',
+    ]:
+        m = _re.search(pat, full_text, _re.IGNORECASE)
+        if m:
+            v = int(m.group(1))
+            if 6 <= v <= 120:
+                result["planned_months"] = v
+                break
+
+    # Start date
+    MONTHS = {'january':1,'february':2,'march':3,'april':4,'may':5,'june':6,
+              'july':7,'august':8,'september':9,'october':10,'november':11,'december':12}
+    for pat in [
+        r'Implementation\s+Start\s+Date\s+(\d{1,2})\s+(\w+)\s+(\d{4})',
+        r'(?:start of|officially marked.*?start).{0,80}?(\d{1,2})\s+(\w+)\s+(\d{4})',
+    ]:
+        m = _re.search(pat, full_text, _re.IGNORECASE)
+        if m:
+            mo_name = m.group(2).lower()
+            yr = int(m.group(3))
+            mo = MONTHS.get(mo_name, 0)
+            if 2000 <= yr <= 2030 and mo:
+                result["start_year"]  = yr
+                result["start_month"] = mo
+                break
+    if "start_year" not in result:
+        m = _re.search(r'(?:started?|commenced?|initiated?|launched?)\s+in\s+(20\d\d)',
+                       full_text, _re.IGNORECASE)
+        if m:
+            result["start_year"] = int(m.group(1))
+
+    # Planned end date
+    for pat in [
+        r'original\s+(?:closure|completion|end)\s+date.*?(?:in|of|:)\s+(\w+\s+\d{4}|\d{4})',
+        r'(?:planned|original)\s+(?:end|closure|completion).*?(\w+\s+\d{4}|\d{4})',
+    ]:
+        m = _re.search(pat, full_text, _re.IGNORECASE)
+        if m:
+            raw = m.group(1).strip()
+            yrm = _re.search(r'(\d{4})', raw)
+            if yrm:
+                result["planned_end_year"] = int(yrm.group(1))
+            break
+    if "planned_end_year" not in result and "start_year" in result and "planned_months" in result:
+        result["planned_end_year"] = result["start_year"] + round(result["planned_months"] / 12)
+
+    # Actual end date
+    for pat in [
+        r'extended.*?until.*?(?:end\s+of\s+)?(\w+\s+\d{4}|\d{4})',
+        r'(?:project\s+)?(?:closed?|completed?|concluded?)\s+in\s+(\w+\s+\d{4}|\d{4})',
+    ]:
+        m = _re.search(pat, full_text, _re.IGNORECASE)
+        if m:
+            raw = m.group(1).strip()
+            yrm = _re.search(r'(\d{4})', raw)
+            if yrm:
+                result["actual_end_year"] = int(yrm.group(1))
+            break
+
+    # Compute actual_months & delay
+    if "start_year" in result and "actual_end_year" in result:
+        sm = result.get("start_month", 6)
+        actual_months = (result["actual_end_year"] - result["start_year"]) * 12 + (12 - sm)
+        result["actual_months"] = round(actual_months)
+    if "planned_months" in result and "actual_months" in result:
+        dm = result["actual_months"] - result["planned_months"]
+        if dm > 0:
+            result["has_delay"]    = True
+            result["delay_months"] = dm
+            result["overrun_pct"]  = round(dm / result["planned_months"] * 100)
+        else:
+            result["has_delay"] = False
+    if "start_year" in result and "actual_end_year" in result:
+        result["duration_str"] = f"{result['start_year']} – {result['actual_end_year']}"
+
+    # Year-by-year disbursement table
+    yh = _re.search(r'(?:Component|Activity|Year)\s+((?:20\d\d\s+){2,})', full_text, _re.IGNORECASE)
+    tot = _re.search(r'^Total\s+([\d,.\s]+)$', full_text, _re.IGNORECASE | _re.MULTILINE)
+    if yh and tot:
+        raw_years  = _re.findall(r'20\d\d', yh.group(1))
+        raw_amts   = [x for x in _re.split(r'\s+', tot.group(1).strip()) if x]
+        amounts = []
+        for a in raw_amts:
+            try:
+                amounts.append(float(a.replace(',', '')))
+            except ValueError:
+                pass
+        if len(amounts) == len(raw_years) + 1:
+            amounts = amounts[:len(raw_years)]
+        if raw_years and len(raw_years) == len(amounts) and len(raw_years) >= 2:
+            result["disbursement_by_year"] = {
+                yr: round(am) for yr, am in zip(raw_years, amounts) if am > 0
+            }
+
+    # Stakeholder gender table
+    gs = _re.search(
+        r'Gender\s+analysis.{0,300}?% of women employed(.*?)(?:\n\n|\Z)',
+        full_text, _re.IGNORECASE | _re.DOTALL)
+    if gs:
+        non_empty = [l.strip() for l in gs.group(1).split('\n') if l.strip()]
+        stakeholders_rich = []
+        i = 0
+        while i < len(non_empty) - 3:
+            name = non_empty[i]
+            if (_re.match(r'^\d+$', non_empty[i+1]) and
+                    _re.match(r'^\d+[\s(]', non_empty[i+2])):
+                pct_idx = i + 3
+                if pct_idx < len(non_empty) and _re.match(r'^\d+\.?\d*$', non_empty[pct_idx]):
+                    pct = round(float(non_empty[pct_idx]))
+                    if 0 <= pct <= 100 and len(name) > 2 and not name.isdigit():
+                        stakeholders_rich.append({
+                            "name": name,
+                            "role": "Project stakeholder",
+                            "pct_women": pct
+                        })
+                    i = pct_idx + 1
+                    continue
+            i += 1
+        if stakeholders_rich:
+            result["stakeholders_rich"] = stakeholders_rich
+
+    # Delay causes
+    delay_sents = []
+    for sent in _re.split(r'(?<=[.!?])\s+', full_text):
+        s = sent.strip()
+        if (_re.search(r'\b(?:delay|extend|postpone|behind\s+schedule|covid|pandemic)\b', s, _re.I)
+                and 40 < len(s) < 250 and s not in delay_sents):
+            delay_sents.append(s)
+        if len(delay_sents) >= 3:
+            break
+    if delay_sents:
+        result["delay_causes"] = delay_sents
+
+    # Cache
+    if result and cached_ai:
+        try:
+            cached_ai["infographic_data"] = result
+            with open(ai_path, "w", encoding="utf-8") as f:
+                _json.dump(cached_ai, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    return result
+
+
 def _parse_report_data(rid: str) -> dict:
-    """Regex / heuristic parser — no LLM calls.
-    Extracts all infographic data from ai_extractions + extracted_sections + PILOT_METADATA."""
+    """No-LLM parser. Extracts infographic data from ai_extractions + extracted_sections
+    + PILOT_METADATA + PDF (for non-pilot reports). Results cached."""
     import re
 
     ai    = _load_ai_extraction(rid)
@@ -2299,7 +2497,6 @@ def _parse_report_data(rid: str) -> dict:
     pilot = PILOT_METADATA.get(rid, {})
     ctx   = ai.get("context", {})
 
-    # ── Core metadata ────────────────────────────────────────────────────────
     title      = ctx.get("title")       or pilot.get("title", rid)
     year       = ctx.get("year")        or pilot.get("year")
     country    = ctx.get("country")     or pilot.get("country", "")
@@ -2318,33 +2515,27 @@ def _parse_report_data(rid: str) -> dict:
     except (ValueError, TypeError):
         budget_usd = None
 
-    # ── Aggregate text corpus ─────────────────────────────────────────────────
     secs_data = sec.get("sections", {})
-    parts = [
+    corpus = "\n\n".join(p for p in [
         ai.get("executive_summary", ""),
         secs_data.get("conclusions", "") or "",
         secs_data.get("findings", "") or secs_data.get("results", "") or "",
-    ]
-    corpus = "\n\n".join(p for p in parts if p and len(p) > 50)
+    ] if p and len(p) > 50)
 
-    # ── Duration parsing ─────────────────────────────────────────────────────
-    planned_months = None
-    actual_months  = None
-
+    # Duration via regex on corpus
     month_re = re.compile(r'(\d+)\s*[-–]?\s*month(?:s)?', re.IGNORECASE)
     month_vals = [int(m.group(1)) for m in month_re.finditer(corpus) if 6 <= int(m.group(1)) <= 240]
-
     year_dur_re = re.compile(
         r'(\d+)\s+year[s]?\s+(?:implementation\s+)?(?:period|duration|project)', re.IGNORECASE)
     year_dur_vals = [int(m.group(1)) * 12 for m in year_dur_re.finditer(corpus)
                      if 1 <= int(m.group(1)) <= 20]
-
     all_durations = sorted(set(month_vals + year_dur_vals))
 
     ext_re = re.compile(r'(?:extended?|extension)\s+(?:by|of)\s+(\d+)\s*month', re.IGNORECASE)
     ext_match = ext_re.search(corpus)
     ext_months = int(ext_match.group(1)) if ext_match else 0
 
+    planned_months = actual_months = None
     if len(all_durations) >= 2:
         planned_months = all_durations[0]
         actual_months  = all_durations[-1]
@@ -2352,36 +2543,28 @@ def _parse_report_data(rid: str) -> dict:
         planned_months = all_durations[0]
         actual_months  = planned_months + ext_months if ext_months else planned_months
 
-    # ── Start / end year ────────────────────────────────────────────────────
-    start_year = None
-    end_year   = None
-
+    # Start/end year via regex on corpus
+    start_year = end_year = None
     range_re = re.compile(r'\b(20[01]\d)\s*(?:[-–]|to|through)\s*(20[012]\d)\b')
     for m in range_re.finditer(corpus):
         sy, ey = int(m.group(1)), int(m.group(2))
         if ey > sy and (ey - sy) <= 20:
-            if not start_year: start_year = sy
-            if not end_year:   end_year   = ey
+            start_year, end_year = sy, ey
             break
-
     if not start_year:
-        sp = re.search(
-            r'(?:commenced?|started?|initiated?|launched?|began)\s+in\s+(20[01]\d)',
-            corpus, re.IGNORECASE)
+        sp = re.search(r'(?:commenced?|started?|initiated?|launched?|began)\s+in\s+(20[01]\d)',
+                       corpus, re.IGNORECASE)
         if sp: start_year = int(sp.group(1))
     if not end_year:
-        ep = re.search(
-            r'(?:ended?|completed?|closed?|concluded?)\s+in\s+(20[012]\d)',
-            corpus, re.IGNORECASE)
+        ep = re.search(r'(?:ended?|completed?|closed?|concluded?)\s+in\s+(20[012]\d)',
+                       corpus, re.IGNORECASE)
         if ep: end_year = int(ep.group(1))
-
     if not start_year and year and planned_months:
         start_year = year - round(planned_months / 12)
     if not end_year and year:
         end_year = year
 
-    planned_end_year = None
-    actual_end_year  = None
+    planned_end_year = actual_end_year = None
     if start_year and planned_months:
         planned_end_year = start_year + round(planned_months / 12)
     elif end_year:
@@ -2394,18 +2577,17 @@ def _parse_report_data(rid: str) -> dict:
     has_delay    = bool(planned_months and actual_months and actual_months > planned_months)
     delay_months = (actual_months - planned_months) if has_delay else 0
 
-    # ── Financial parsing ────────────────────────────────────────────────────
+    # Financial via regex
     def _extract_amounts(text):
         amounts = []
-        patterns = [
+        for pat, mult in [
             (r'USD\s+([\d,]+(?:\.\d+)?)\s*million', 1e6),
             (r'US\$\s*([\d,]+(?:\.\d+)?)\s*million', 1e6),
             (r'\$([\d,]+(?:\.\d+)?)\s*million', 1e6),
             (r'USD\s*([\d,]+)', 1.0),
             (r'US\$\s*([\d,]+)', 1.0),
             (r'\$\s*([\d,]+)', 1.0),
-        ]
-        for pat, mult in patterns:
+        ]:
             for m in re.finditer(pat, text, re.IGNORECASE):
                 try:
                     v = float(m.group(1).replace(',', '')) * mult
@@ -2433,16 +2615,14 @@ def _parse_report_data(rid: str) -> dict:
             expenditure_usd = deduped[1]
 
     util_rate = None
-    util_re = re.compile(
-        r'(\d+(?:\.\d+)?)\s*%\s+(?:of\s+)?(?:budget|funds?|allocation|disburs|utiliz)',
-        re.IGNORECASE)
-    um = util_re.search(corpus)
+    um = re.search(r'(\d+(?:\.\d+)?)\s*%\s+(?:of\s+)?(?:budget|funds?|allocation|disburs|utiliz)',
+                   corpus, re.IGNORECASE)
     if um:
         util_rate = float(um.group(1))
     elif budget_usd and expenditure_usd:
         util_rate = round(expenditure_usd / budget_usd * 100, 1)
 
-    # ── Stakeholders ─────────────────────────────────────────────────────────
+    # Stakeholders via keyword scan
     STAKEHOLDER_TERMS = [
         ("National Government",  r'\b(?:government|ministry|ministries|national\s+authority)\b'),
         ("Private Sector",       r'\bprivate\s+sector\b'),
@@ -2455,31 +2635,25 @@ def _parse_report_data(rid: str) -> dict:
     stakeholders = [name for name, pat in STAKEHOLDER_TERMS
                     if re.search(pat, corpus, re.IGNORECASE)]
 
-    # ── Gender ───────────────────────────────────────────────────────────────
+    # Gender
     gender_count = len(re.findall(r'\b(?:gender|women|female|girl)\b', corpus, re.IGNORECASE))
     gender_pct = None
-    gp_re = re.compile(r'(\d+(?:\.\d+)?)\s*%\s+(?:women|female|girl)', re.IGNORECASE)
-    gm = gp_re.search(corpus)
+    gm = re.search(r'(\d+(?:\.\d+)?)\s*%\s+(?:women|female|girl)', corpus, re.IGNORECASE)
     if gm:
         gender_pct = float(gm.group(1))
-
     if gender_count >= 10:
-        gender_rating = "Mainstreamed"
-        gender_color  = "#2f7a6f"
+        gender_rating, gender_color = "Mainstreamed", "#2f7a6f"
     elif gender_count >= 3:
-        gender_rating = "Partially Mainstreamed"
-        gender_color  = "#c08a34"
+        gender_rating, gender_color = "Partially Mainstreamed", "#c08a34"
     else:
-        gender_rating = "Not Mainstreamed"
-        gender_color  = "#a3492f"
-
+        gender_rating, gender_color = "Not Mainstreamed", "#a3492f"
     gender_note = None
     for sent in re.split(r'(?<=[.!?])\s+', corpus):
         if re.search(r'\b(?:gender|women|female)\b', sent, re.IGNORECASE) and 30 < len(sent) < 300:
             gender_note = sent.strip()
             break
 
-    # ── Delay causes ─────────────────────────────────────────────────────────
+    # Delay causes
     delay_causes = []
     for sent in re.split(r'(?<=[.!?])\s+', corpus):
         if re.search(r'\b(?:delay|extend|postpone|behind\s+schedule|covid|pandemic)\b',
@@ -2489,7 +2663,7 @@ def _parse_report_data(rid: str) -> dict:
                 delay_causes.append(s)
     delay_causes = delay_causes[:3]
 
-    # ── GEF ID ───────────────────────────────────────────────────────────────
+    # GEF ID
     gef_id = None
     for gpat in [r'GEF\s+(?:Project\s+)?(?:ID|No\.?)\s*:?\s*([\d]{3,6})',
                  r'\bGEF[/-]([\d]{3,6})\b']:
@@ -2498,7 +2672,7 @@ def _parse_report_data(rid: str) -> dict:
             gef_id = gm2.group(1)
             break
 
-    # ── Overall rating label ──────────────────────────────────────────────────
+    # Overall rating
     overall_rating_label = pilot.get("overall_rating_label", "")
     if not overall_rating_label:
         rating_val = ctx.get("evaluation_rating") or pilot.get("evaluation_rating")
@@ -2514,18 +2688,98 @@ def _parse_report_data(rid: str) -> dict:
             except (ValueError, TypeError):
                 pass
 
-    # ── Overrun percentage ────────────────────────────────────────────────────
-    overrun_pct = None
-    if has_delay and planned_months:
+    # PDF-based rich extraction (for non-pilot reports, or any report missing rich fields)
+    if not pilot.get("disbursement_by_year") and not pilot.get("stakeholders_rich"):
+        try:
+            pdf_rich = _extract_rich_infographic_data(rid)
+        except Exception:
+            pdf_rich = {}
+    else:
+        pdf_rich = {}
+
+    def _pf(field, current):
+        return pdf_rich.get(field) if current is None and field in pdf_rich else current
+
+    planned_months   = _pf("planned_months",   planned_months)
+    actual_months    = _pf("actual_months",     actual_months)
+    start_year       = _pf("start_year",        start_year)
+    planned_end_year = _pf("planned_end_year",  planned_end_year)
+    actual_end_year  = _pf("actual_end_year",   actual_end_year)
+    gef_id           = _pf("gef_id",            gef_id)
+    if not delay_causes and pdf_rich.get("delay_causes"):
+        delay_causes = pdf_rich["delay_causes"]
+
+    disbursement_by_year = pdf_rich.get("disbursement_by_year")
+    stakeholders_rich    = pdf_rich.get("stakeholders_rich")
+    cofinancing_labels = cofinancing_planned = cofinancing_actual = None
+
+    if pdf_rich.get("has_delay") is not None and not has_delay:
+        has_delay    = pdf_rich["has_delay"]
+        delay_months = pdf_rich.get("delay_months", 0)
+    overrun_pct_pdf = pdf_rich.get("overrun_pct")
+    if pdf_rich.get("duration_str") and not (start_year and actual_end_year):
+        pass  # will be set below
+
+    # Recompute delay after PDF merge
+    if planned_months and actual_months and actual_months > planned_months:
+        has_delay    = True
+        delay_months = actual_months - planned_months
+
+    # PILOT_METADATA rich overrides (highest priority — pre-computed correct values)
+    if pilot.get("planned_months"):
+        planned_months = pilot["planned_months"]
+    if pilot.get("actual_months"):
+        actual_months = pilot["actual_months"]
+    if "delay_months" in pilot:
+        delay_months = pilot["delay_months"]
+    if "has_delay" in pilot:
+        has_delay = pilot["has_delay"]
+    if pilot.get("start_year"):
+        start_year = pilot["start_year"]
+    if pilot.get("planned_end_year"):
+        planned_end_year = pilot["planned_end_year"]
+    if pilot.get("actual_end_year"):
+        actual_end_year = pilot["actual_end_year"]
+    if pilot.get("gef_id") and not gef_id:
+        gef_id = pilot["gef_id"]
+    if pilot.get("util_rate") is not None:
+        util_rate = pilot["util_rate"]
+    if pilot.get("disbursement_by_year"):
+        disbursement_by_year = pilot["disbursement_by_year"]
+    if pilot.get("cofinancing_labels"):
+        cofinancing_labels  = pilot["cofinancing_labels"]
+        cofinancing_planned = pilot.get("cofinancing_planned", [])
+        cofinancing_actual  = pilot.get("cofinancing_actual",  [])
+    if pilot.get("stakeholders_rich"):
+        stakeholders_rich = pilot["stakeholders_rich"]
+    if pilot.get("gender_rating"):
+        gender_rating = pilot["gender_rating"]
+        gender_color  = {"Mainstreamed":"#2f7a6f","Partially Mainstreamed":"#c08a34"}.get(gender_rating,"#a3492f")
+    if pilot.get("gender_note"):
+        gender_note = pilot["gender_note"]
+    if pilot.get("delay_causes"):
+        delay_causes = pilot["delay_causes"]
+    if pilot.get("timeline_events"):
+        timeline_events = pilot["timeline_events"]
+    else:
+        timeline_events = None
+    if pilot.get("budget_usd") and not budget_usd:
+        budget_usd = float(pilot["budget_usd"])
+
+    # Overrun pct
+    overrun_pct = pilot.get("overrun_pct") or overrun_pct_pdf
+    if overrun_pct is None and has_delay and planned_months:
         overrun_pct = round(delay_months / planned_months * 100)
 
-    # ── Duration string (for header ID bar) ──────────────────────────────────
-    if start_year and actual_end_year:
-        duration_str = f"{start_year} – {actual_end_year}"
-    elif start_year and planned_end_year:
-        duration_str = f"{start_year} – {planned_end_year}"
-    else:
-        duration_str = ""
+    # Duration string
+    duration_str = pilot.get("duration_str", "")
+    if not duration_str:
+        if pdf_rich.get("duration_str"):
+            duration_str = pdf_rich["duration_str"]
+        elif start_year and actual_end_year:
+            duration_str = f"{start_year} – {actual_end_year}"
+        elif start_year and planned_end_year:
+            duration_str = f"{start_year} – {planned_end_year}"
 
     return {
         "rid": rid, "title": title, "year": year,
@@ -2540,13 +2794,16 @@ def _parse_report_data(rid: str) -> dict:
         "planned_end_year": planned_end_year, "actual_end_year": actual_end_year,
         "has_delay": has_delay, "delay_months": delay_months,
         "delay_causes": delay_causes,
-        "stakeholders": stakeholders,
+        "stakeholders": stakeholders, "stakeholders_rich": stakeholders_rich,
         "gender_rating": gender_rating, "gender_color": gender_color,
-        "gender_count": gender_count, "gender_pct": gender_pct,
-        "gender_note": gender_note,
+        "gender_count": gender_count, "gender_pct": gender_pct, "gender_note": gender_note,
         "overall_rating_label": overall_rating_label,
-        "overrun_pct": overrun_pct,
-        "duration_str": duration_str,
+        "overrun_pct": overrun_pct, "duration_str": duration_str,
+        "timeline_events": timeline_events,
+        "disbursement_by_year": disbursement_by_year,
+        "cofinancing_labels": cofinancing_labels,
+        "cofinancing_planned": cofinancing_planned,
+        "cofinancing_actual":  cofinancing_actual,
     }
 
 
@@ -2555,103 +2812,143 @@ def _render_infographic_html(d: dict) -> str:
     import json as _json
 
     def _esc(s):
-        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
+        return str(s).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
     def _fmt_m(m):
         if m is None: return "N/A"
         yrs, mos = divmod(int(m), 12)
         if mos == 0: return f"{yrs} yr{'s' if yrs != 1 else ''}"
         if yrs == 0: return f"{mos} mo"
         return f"{yrs} yr{'s' if yrs != 1 else ''} {mos} mo"
-
     def _fmt_usd(v):
         if v is None: return "N/A"
         if v >= 1_000_000: return f"${v/1_000_000:.2f}M"
         if v >= 1_000: return f"${v/1_000:.0f}K"
         return f"${v:.0f}"
 
-    # ── Timeline events ────────────────────────────────────────────────────────
-    sy  = d.get("start_year")
-    pey = d.get("planned_end_year")
-    aey = d.get("actual_end_year")
-    y   = d.get("year")
+    # Timeline
+    sy=d.get("start_year"); pey=d.get("planned_end_year")
+    aey=d.get("actual_end_year"); y=d.get("year")
+    if d.get("timeline_events"):
+        tl_events_json = _json.dumps(d["timeline_events"])
+        has_timeline   = True
+    else:
+        tl_events_json = "[]"; has_timeline = bool(sy and (pey or aey))
+        if has_timeline:
+            all_yrs = [x for x in [sy,pey,aey,y] if x]
+            tl_min=min(all_yrs); tl_max=max(all_yrs); tl_span=max(tl_max-tl_min,1)
+            def _pos(yr): return round((yr-tl_min)/tl_span*92+4,1)
+            events=[]
+            if sy: events.append({"yr":str(sy),"pos":_pos(sy),"lab":"Project Start","type":"actual"})
+            if sy and pey and (pey-sy)>1:
+                mid=round(sy+(pey-sy)*0.45)
+                events.append({"yr":str(mid),"pos":_pos(mid),"lab":"Mid-Term Review","type":"actual"})
+            if pey and d.get("has_delay"):
+                events.append({"yr":f"{pey}*","pos":_pos(pey),"lab":"Planned Closure","type":"plan"})
+            if aey:
+                lbl=f"Actual Closure (+{d['delay_months']}mo)" if d.get("has_delay") else "Project Closure"
+                events.append({"yr":str(aey),"pos":_pos(aey),"lab":lbl,"type":"actual"})
+            if y and y!=aey:
+                events.append({"yr":str(y),"pos":_pos(y),"lab":"Terminal Evaluation","type":"actual"})
+            tl_events_json=_json.dumps(events)
 
-    tl_events_json = "[]"
-    has_timeline = bool(sy and (pey or aey))
-    if has_timeline:
-        all_yrs = [x for x in [sy, pey, aey, y] if x]
-        tl_min  = min(all_yrs)
-        tl_max  = max(all_yrs)
-        tl_span = max(tl_max - tl_min, 1)
-        def _pos(yr): return round((yr - tl_min) / tl_span * 92 + 4, 1)
-        events = []
-        if sy:
-            events.append({"yr": str(sy), "pos": _pos(sy), "lab": "Project Start", "type": "actual"})
-        if sy and pey and (pey - sy) > 1:
-            mid = round(sy + (pey - sy) * 0.45)
-            events.append({"yr": str(mid), "pos": _pos(mid), "lab": "Mid-Term Review", "type": "actual"})
-        if pey and d.get("has_delay"):
-            events.append({"yr": f"{pey}*", "pos": _pos(pey), "lab": "Planned Closure", "type": "plan"})
-        if aey:
-            lbl = f"Actual Closure (+{d['delay_months']}mo)" if d.get("has_delay") else "Project Closure"
-            events.append({"yr": str(aey), "pos": _pos(aey), "lab": lbl, "type": "actual"})
-        if y and y != aey:
-            events.append({"yr": str(y), "pos": _pos(y), "lab": "Terminal Evaluation", "type": "actual"})
-        tl_events_json = _json.dumps(events)
-
-    # ── Gantt ─────────────────────────────────────────────────────────────────
-    pm = d.get("planned_months")
-    am = d.get("actual_months")
-    has_gantt = bool(d.get("has_delay") and pm and am)
-    p_pct = ov_pct = 0
+    # Gantt
+    pm=d.get("planned_months"); am=d.get("actual_months")
+    has_gantt=bool(d.get("has_delay") and pm and am)
+    p_pct=ov_pct=0
     if has_gantt:
-        p_pct  = round(pm / am * 100, 1)
-        ov_pct = round(100 - p_pct, 1)
+        p_pct=round(pm/am*100,1); ov_pct=round(100-p_pct,1)
 
-    # ── Financial ─────────────────────────────────────────────────────────────
-    bv = d.get("budget_usd")
-    ev = d.get("expenditure_usd")
-    ur = d.get("util_rate")
-    donor = d.get("donor", "")
-    has_financial = bool(bv)
+    # Financial
+    bv=d.get("budget_usd"); ev=d.get("expenditure_usd")
+    ur=d.get("util_rate"); donor=d.get("donor","")
+    has_financial=bool(bv)
+    dby=d.get("disbursement_by_year")
+    cofin_labels=d.get("cofinancing_labels")
+    cofin_planned=d.get("cofinancing_planned")
+    cofin_actual=d.get("cofinancing_actual")
 
-    fin_labels = fin_vals = fin_colors = "[]"
-    if has_financial:
-        fin_labels = _json.dumps([f"{donor} Grant" if donor else "Budget"] + (["Expenditure"] if ev else []))
-        fin_vals   = _json.dumps([round(bv)] + ([round(ev)] if ev else []))
-        fin_colors = _json.dumps(["#173a58"] + (["#2f7a6f"] if ev else []))
+    if dby:
+        spend_chart_title=f"{_esc(donor)} Disbursement by Year (US$)" if donor else "Disbursement by Year (US$)"
+        spend_chart_js=f"""new Chart(document.getElementById('spendChart'),{{
+    type:'bar',data:{{labels:{_json.dumps(list(dby.keys()))},
+    datasets:[{{data:{_json.dumps(list(dby.values()))},backgroundColor:'#173a58',borderRadius:2}}]}},
+    options:{{plugins:{{legend:{{display:false}}}},scales:{{
+      y:{{beginAtZero:true,ticks:{{callback:function(v){{return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':'$'+(v/1000).toFixed(0)+'K';}}}}}},
+      x:{{grid:{{display:false}}}}}}
+    }}}});"""
+    elif bv:
+        spend_chart_title=f"{_esc(donor)} Grant" if donor else "Budget"
+        fl=_json.dumps([f"{donor} Grant" if donor else "Budget"]+([" Expenditure"] if ev else []))
+        fv=_json.dumps([round(bv)]+([round(ev)] if ev else []))
+        fc=_json.dumps(["#173a58"]+([" #2f7a6f"] if ev else []))
+        spend_chart_js=f"""new Chart(document.getElementById('spendChart'),{{
+    type:'bar',data:{{labels:{fl},datasets:[{{data:{fv},backgroundColor:{fc},borderRadius:3}}]}},
+    options:{{plugins:{{legend:{{display:false}}}},scales:{{
+      y:{{beginAtZero:true,ticks:{{callback:function(v){{return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':'$'+(v/1000).toFixed(0)+'K';}}}}}},
+      x:{{grid:{{display:false}}}}}}}}
+    }}}});"""
+    else:
+        spend_chart_title="Budget Allocation"; spend_chart_js=""
 
-    finbar_html = ""
+    if cofin_labels and cofin_planned is not None and cofin_actual is not None:
+        cofin_chart_title="Co-financing by Source: Planned vs. Actual"
+        cofin_chart_js=f"""new Chart(document.getElementById('cofinChart'),{{
+    type:'bar',data:{{labels:{_json.dumps(cofin_labels)},
+    datasets:[{{label:'Planned',data:{_json.dumps(cofin_planned)},backgroundColor:'#c08a34'}},
+              {{label:'Actual', data:{_json.dumps(cofin_actual)}, backgroundColor:'#2f7a6f'}}]}},
+    options:{{plugins:{{legend:{{position:'bottom',labels:{{boxWidth:10,font:{{size:9}}}}}}}},
+      scales:{{y:{{beginAtZero:true,ticks:{{callback:function(v){{return v>=1e6?'$'+(v/1e6).toFixed(1)+'M':'$'+(v/1000).toFixed(0)+'K';}}}}}},x:{{grid:{{display:false}}}}}}
+    }}}});"""
+    elif ur is not None:
+        cofin_chart_title="Budget Utilisation"
+        uc2="#2f7a6f" if ur>=85 else "#c08a34" if ur>=60 else "#a3492f"
+        cofin_chart_js=f"""new Chart(document.getElementById('cofinChart'),{{
+    type:'bar',data:{{labels:['Budget Utilisation'],datasets:[{{data:[{round(ur,1)}],backgroundColor:['{uc2}'],label:'%'}}]}},
+    options:{{indexAxis:'y',plugins:{{legend:{{display:false}}}},scales:{{x:{{beginAtZero:true,max:100}},y:{{grid:{{display:false}}}}}}
+    }}}});"""
+    else:
+        cofin_chart_title="Co-financing"; cofin_chart_js=""
+
+    finbar_html=""
     if bv:
-        lab1 = f"{_esc(donor)} Grant" if donor else "Budget"
-        finbar_html += (f'<div class="finbar"><div class="finlabel">{lab1}</div>'
-                       f'<div class="finbg"><div class="finfill" style="width:100%;"></div></div>'
-                       f'<div class="finval">{_esc(_fmt_usd(bv))}</div></div>')
+        lab1=f"{_esc(donor)} Grant" if donor else "Budget"
+        finbar_html+=(f'<div class="finbar"><div class="finlabel">{lab1}</div>'
+                     f'<div class="finbg"><div class="finfill" style="width:100%;"></div></div>'
+                     f'<div class="finval">{_esc(_fmt_usd(bv))}</div></div>')
     if ev and bv:
-        ep = min(round(ev / bv * 100), 100)
-        finbar_html += (f'<div class="finbar"><div class="finlabel">Expenditure</div>'
-                       f'<div class="finbg"><div class="finfill" style="width:{ep}%;background:linear-gradient(90deg,#c08a34,#dba75a);"></div></div>'
-                       f'<div class="finval">{_esc(_fmt_usd(ev))}</div></div>')
+        ep=min(round(ev/bv*100),100)
+        finbar_html+=(f'<div class="finbar"><div class="finlabel">Expenditure</div>'
+                     f'<div class="finbg"><div class="finfill" style="width:{ep}%;background:linear-gradient(90deg,#c08a34,#dba75a);"></div></div>'
+                     f'<div class="finval">{_esc(_fmt_usd(ev))}</div></div>')
     if ur is not None:
-        uc = "var(--ozone)" if ur >= 85 else "var(--amber)" if ur >= 60 else "var(--brick)"
-        finbar_html += (f'<div class="finbar"><div class="finlabel">Utilisation</div>'
-                       f'<div class="finbg"><div class="finfill" style="width:{min(ur,100):.0f}%;background:{uc};"></div></div>'
-                       f'<div class="finval">{ur:.1f}%</div></div>')
+        uc="var(--ozone)" if ur>=85 else "var(--amber)" if ur>=60 else "var(--brick)"
+        finbar_html+=(f'<div class="finbar"><div class="finlabel">Utilisation</div>'
+                     f'<div class="finbg"><div class="finfill" style="width:{min(ur,100):.0f}%;background:{uc};"></div></div>'
+                     f'<div class="finval">{ur:.1f}%</div></div>')
 
-    # ── Stakeholder table ─────────────────────────────────────────────────────
-    stake_rows = ""
-    for s in (d.get("stakeholders") or []):
-        stake_rows += (f'<tr><td>{_esc(s)}</td><td>Beneficiary / Partner</td>'
-                      f'<td><div class="gbar"><div class="gbar-bg"><div class="gbar-fill" style="width:0%;"></div></div>'
-                      f'<div class="gbar-val">—</div></div></td></tr>')
+    # Stakeholder table
+    stakeholders_rich=d.get("stakeholders_rich")
+    stake_rows=""
+    if stakeholders_rich:
+        for s in stakeholders_rich:
+            pct=s.get("pct_women",0) or 0
+            stake_rows+=(f'<tr><td>{_esc(s.get("name",""))}</td><td>{_esc(s.get("role",""))}</td>'
+                        f'<td><div class="gbar"><div class="gbar-bg"><div class="gbar-fill" style="width:{pct}%;"></div></div>'
+                        f'<div class="gbar-val">{pct}%</div></div></td></tr>')
+    else:
+        for s in (d.get("stakeholders") or []):
+            stake_rows+=(f'<tr><td>{_esc(s)}</td><td>Beneficiary / Partner</td>'
+                        f'<td><div class="gbar"><div class="gbar-bg"><div class="gbar-fill" style="width:0%;"></div></div>'
+                        f'<div class="gbar-val">—</div></div></td></tr>')
     if not stake_rows:
-        stake_rows = '<tr><td colspan="3" style="color:var(--ink-soft);font-style:italic;padding:8px;">Stakeholder data not available in extracted report text.</td></tr>'
+        stake_rows='<tr><td colspan="3" style="color:var(--ink-soft);font-style:italic;padding:8px;">Stakeholder data not available.</td></tr>'
+    stk_tag="% women employed / in executive roles, by stakeholder" if stakeholders_rich else "involvement by stakeholder group"
 
-    g_note   = d.get("gender_note") or "No formal gender strategy identified in this evaluation report."
-    g_rating = d.get("gender_rating", "Not Assessed")
+    g_note=d.get("gender_note") or "No formal gender strategy identified in this evaluation report."
+    g_rating=d.get("gender_rating","Not Assessed")
 
-    # ── Header ID bar ─────────────────────────────────────────────────────────
-    idbar_parts = [f'<div><span>UNIDO ID</span><b>{_esc(d.get("project_id") or "—")}</b></div>']
+    # ID bar
+    idbar_parts=[f'<div><span>UNIDO ID</span><b>{_esc(d.get("project_id") or "—")}</b></div>']
     if d.get("gef_id"):
         idbar_parts.append(f'<div><span>GEF ID</span><b>{_esc(d["gef_id"])}</b></div>')
     idbar_parts.append(f'<div><span>Country</span><b>{_esc(d.get("country") or "—")}</b></div>')
@@ -2659,73 +2956,53 @@ def _render_infographic_html(d: dict) -> str:
         idbar_parts.append(f'<div><span>Duration</span><b>{_esc(d["duration_str"])}</b></div>')
     if d.get("year"):
         idbar_parts.append(f'<div><span>TE Date</span><b>{_esc(str(d["year"]))}</b></div>')
-    idbar_html = "".join(idbar_parts)
+    idbar_html="".join(idbar_parts)
 
-    # ── Verdict strip ─────────────────────────────────────────────────────────
-    overall = d.get("overall_rating_label", "")
-    verdict_extra = ""
+    # Verdict strip
+    overall=d.get("overall_rating_label","")
+    verdict_extra=""
     if d.get("has_delay") and d.get("delay_months"):
-        pct_s = f" (+{d['overrun_pct']}%)" if d.get("overrun_pct") else ""
-        verdict_extra = f"&nbsp;·&nbsp; {d['delay_months']}-month schedule overrun{pct_s} against the original plan"
-    verdict_html = (f'<div class="verdict">Overall objective achievement: '
-                   f'<span class="big">{_esc(overall)}</span>{verdict_extra}</div>') if overall else ""
+        pct_s=f" (+{d['overrun_pct']}%)" if d.get("overrun_pct") else ""
+        verdict_extra=f"&nbsp;·&nbsp; {d['delay_months']}-month schedule overrun{pct_s} against the original plan"
+    verdict_html=(f'<div class="verdict">Overall objective achievement: '
+                 f'<span class="big">{_esc(overall)}</span>{verdict_extra}</div>') if overall else ""
 
-    # ── Section numbering ─────────────────────────────────────────────────────
-    n4 = 4 if has_gantt else 3
-    n5 = 5 if has_gantt else 4
-
-    # ── Overrun card ──────────────────────────────────────────────────────────
-    overrun_val = (f"+{d['overrun_pct']}%" if d.get("overrun_pct")
-                   else f"+{d['delay_months']}mo" if d.get("delay_months")
-                   else "On Schedule")
-    overrun_cls = "meta warn" if d.get("has_delay") else "meta"
-    budget_disp = f"{_fmt_usd(bv)} ({_esc(donor)})" if donor and bv else _fmt_usd(bv)
-
-    # ── Delay causes HTML ─────────────────────────────────────────────────────
-    causes_html = ""
+    n4=4 if has_gantt else 3; n5=5 if has_gantt else 4
+    overrun_val=(f"+{d['overrun_pct']}%" if d.get("overrun_pct")
+                 else f"+{d['delay_months']}mo" if d.get("delay_months") else "On Schedule")
+    overrun_cls="meta warn" if d.get("has_delay") else "meta"
+    budget_disp=f"{_fmt_usd(bv)} ({_esc(donor)})" if donor and bv else _fmt_usd(bv)
+    causes_html=""
     if has_gantt and d.get("delay_causes"):
-        items = "".join(f"<li>{_esc(c)}</li>" for c in d["delay_causes"])
-        causes_html = (f'<div class="delay-causes"><b style="font-size:10.5px;color:var(--unblue-deep);">'
-                      f'Primary delay drivers</b><ul>{items}</ul></div>')
+        items="".join(f"<li>{_esc(c)}</li>" for c in d["delay_causes"])
+        causes_html=(f'<div class="delay-causes"><b style="font-size:10.5px;color:var(--unblue-deep);">'
+                    f'Primary delay drivers</b><ul>{items}</ul></div>')
+    t_esc=_esc(d.get("title","")); rid_esc=_esc(d.get("rid",""))
+    donor_line=("Funded by <b>"+_esc(donor)+"</b>. " if donor else "")+\
+               ("Implemented in <b>"+_esc(d.get("country",""))+"</b>." if d.get("country") else "")
 
-    # ── Utilisation chart JS ───────────────────────────────────────────────────
-    util_chart_js = ""
-    if ur is not None and has_financial:
-        uc2 = "#2f7a6f" if ur >= 85 else "#c08a34" if ur >= 60 else "#a3492f"
-        util_chart_js = f"""new Chart(document.getElementById('cofinChart'), {{
-    type: 'bar',
-    data: {{ labels: ['Budget Utilisation'], datasets: [{{ data: [{round(ur,1)}], backgroundColor: ['{uc2}'], label: '%' }}] }},
-    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }}, scales: {{ x: {{ beginAtZero: true, max: 100 }}, y: {{ grid: {{ display: false }} }} }} }}
-  }});"""
-    elif has_financial:
-        util_chart_js = """var c2=document.getElementById('cofinChart');
-  if(c2) c2.closest('.chartcard').innerHTML='<b>Expenditure data not available in report text</b><p style="font-size:9.5px;color:var(--ink-soft);margin-top:6px;">Detailed expenditure breakdown could not be extracted from the report.</p>';"""
+    # Pre-compute financial JS block to avoid nested f-string (Python < 3.12 limitation)
+    if has_financial:
+        financial_js_block = "(function(){\n  if(typeof Chart==='undefined')return;\n  " + spend_chart_js + "\n  " + cofin_chart_js + "\n})();"
+    else:
+        financial_js_block = ""
 
-    t_esc   = _esc(d.get("title", ""))
-    rid_esc = _esc(d.get("rid", ""))
-    donor_line = ("Funded by <b>" + _esc(donor) + "</b>. " if donor else "") + \
-                 ("Implemented in <b>" + _esc(d.get("country","")) + "</b>." if d.get("country") else "")
-
-    return f"""<!DOCTYPE html>
+        return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Evaluation Infographic — {rid_esc}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
-  :root{{
-    --ink:#132436; --ink-soft:#5a6b7a; --paper:#faf7f0; --panel:#ffffff;
-    --unblue:#173a58; --unblue-deep:#0d2436; --ozone:#2f7a6f; --amber:#c08a34; --brick:#a3492f;
-    --line:#e2dcc9;
-    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
-    --sans:"Segoe UI",Arial,sans-serif;
-  }}
+  :root{{--ink:#132436;--ink-soft:#5a6b7a;--paper:#faf7f0;--panel:#ffffff;
+    --unblue:#173a58;--unblue-deep:#0d2436;--ozone:#2f7a6f;--amber:#c08a34;--brick:#a3492f;
+    --line:#e2dcc9;--serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+    --sans:"Segoe UI",Arial,sans-serif;}}
   *{{box-sizing:border-box;}}
   body{{margin:0;background:#ded7c4;font-family:var(--sans);color:var(--ink);}}
-  .page{{width:794px;margin:24px auto;background:var(--paper);box-shadow:0 10px 40px rgba(0,0,0,.25);position:relative;overflow:hidden;padding:0 0 22px;}}
+  .page{{width:794px;margin:24px auto;background:var(--paper);box-shadow:0 10px 40px rgba(0,0,0,.25);overflow:hidden;padding:0 0 22px;}}
   .body{{padding:20px 34px 0;}}
   .section-label{{font-family:var(--serif);font-size:13px;color:var(--unblue-deep);text-transform:uppercase;letter-spacing:.08em;border-bottom:1.5px solid var(--unblue);padding-bottom:5px;margin:28px 0 12px;display:flex;justify-content:space-between;align-items:baseline;}}
-  .section-label:first-of-type{{margin-top:0;}}
   .section-label .tag{{font-size:9.5px;color:var(--ink-soft);text-transform:none;letter-spacing:0;font-family:var(--sans);}}
   .section-label .num{{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--unblue);color:#fff;border-radius:50%;font-size:10px;margin-right:8px;font-family:var(--sans);}}
   .head{{background:linear-gradient(120deg,var(--unblue-deep),var(--unblue) 75%);color:#f3ede0;padding:26px 34px 20px;position:relative;}}
@@ -2760,7 +3037,6 @@ def _render_infographic_html(d: dict) -> str:
   .gantt-track{{flex:1;background:#efe9d8;border-radius:3px;height:16px;position:relative;overflow:visible;}}
   .gantt-fill{{position:absolute;top:0;height:100%;border-radius:3px;}}
   .gantt-fill.plan{{background:#8fa4b5;}}
-  .gantt-fill.actual{{background:var(--brick);}}
   .gantt-fill.overrun{{background:repeating-linear-gradient(45deg,var(--brick),var(--brick) 4px,#c96a4d 4px,#c96a4d 8px);}}
   .overrun-badge{{display:inline-block;background:var(--brick);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:3px;margin-top:6px;}}
   .delay-causes{{margin-top:12px;font-size:10.5px;}}
@@ -2788,19 +3064,15 @@ def _render_infographic_html(d: dict) -> str:
 </head>
 <body>
 <div class="page">
-
   <div class="head">
     <div class="eyebrow">UNIDO Independent Evaluation · Standardized Terminal Evaluation Infographic</div>
     <div class="headline">{t_esc}</div>
     <div class="idbar">{idbar_html}</div>
   </div>
   {verdict_html}
-
   <div class="body">
-
-    <!-- 1. AT A GLANCE -->
     <div class="section-label"><span><span class="num">1</span>At a Glance</span></div>
-    {('<div class="funded-line">' + donor_line + '</div>') if donor_line.strip() else ""}
+    {('<div class="funded-line">'+donor_line+'</div>') if donor_line.strip() else ""}
     <div class="metarow">
       <div class="meta"><div class="mk">Country</div><div class="mv">{_esc(d.get("country") or "—")}</div></div>
       <div class="meta"><div class="mk">Thematic Area</div><div class="mv">{_esc(d.get("thematic") or "—")}</div></div>
@@ -2812,20 +3084,10 @@ def _render_infographic_html(d: dict) -> str:
       <div class="meta"><div class="mk">Actual Duration</div><div class="mv">{_esc(_fmt_m(d.get("actual_months") or d.get("planned_months")))}</div></div>
       <div class="{overrun_cls}"><div class="mk">Schedule Overrun</div><div class="mv">{_esc(overrun_val)}</div></div>
     </div>
-
-    <!-- 2. IMPLEMENTATION TIMELINE -->
-    {"" if not has_timeline else '''<div class="section-label"><span><span class="num">2</span>Implementation Timeline</span></div>
-    <div class="tl-legend"><span><i style="background:var(--ink-soft);"></i>Planned milestone</span><span><i style="background:var(--amber);"></i>Actual milestone</span></div>
-    <div class="tlwrap" id="timeline"></div>'''}
-
-    <!-- 3. DELAYS IN THE PROJECT -->
-    {"" if not has_gantt else f'<div class="section-label"><span><span class="num">3</span>Delays in the Project</span><span class="tag">planned vs. actual duration</span></div><div class="delaywrap"><div class="ganttrow"><div class="gantt-label">Planned</div><div class="gantt-track"><div class="gantt-fill plan" style="left:0;width:{p_pct}%;"></div></div></div><div class="ganttrow"><div class="gantt-label">Actual</div><div class="gantt-track"><div class="gantt-fill actual" style="left:0;width:{p_pct}%;"></div><div class="gantt-fill overrun" style="left:{p_pct}%;width:{ov_pct}%;"></div></div></div><span class="overrun-badge">+{d["delay_months"]} months overrun</span>{causes_html}</div>'}
-
-    <!-- 4. FINANCIAL OVERVIEW -->
-    {"" if not has_financial else f'<div class="section-label"><span><span class="num">{n4}</span>Financial Overview</span></div><div class="twocol"><div class="chartcard"><b>Budget Allocation (US$)</b><canvas id="spendChart"></canvas></div><div class="chartcard"><b>Budget Utilisation</b><canvas id="cofinChart"></canvas></div></div><div style="margin-top:12px;">{finbar_html}</div>'}
-
-    <!-- 5. STAKEHOLDER & GENDER MAINSTREAMING -->
-    <div class="section-label"><span><span class="num">{n5}</span>Stakeholder &amp; Gender Mainstreaming</span><span class="tag">involvement by stakeholder group · gender mainstreaming status</span></div>
+    {"" if not has_timeline else '<div class="section-label"><span><span class="num">2</span>Implementation Timeline</span></div><div class="tl-legend"><span><i style="background:var(--ink-soft);"></i>Planned milestone</span><span><i style="background:var(--amber);"></i>Actual milestone</span></div><div class="tlwrap" id="timeline"></div>'}
+    {"" if not has_gantt else f'<div class="section-label"><span><span class="num">3</span>Delays in the Project</span><span class="tag">planned vs. actual duration</span></div><div class="delaywrap"><div class="ganttrow"><div class="gantt-label">Planned</div><div class="gantt-track"><div class="gantt-fill plan" style="left:0;width:{p_pct}%;"></div></div></div><div class="ganttrow"><div class="gantt-label">Actual</div><div class="gantt-track"><div class="gantt-fill plan" style="left:0;width:{p_pct}%;"></div><div class="gantt-fill overrun" style="left:{p_pct}%;width:{ov_pct}%;"></div></div></div><span class="overrun-badge">+{d["delay_months"]} months overrun</span>{causes_html}</div>'}
+    {"" if not has_financial else f'<div class="section-label"><span><span class="num">{n4}</span>Financial Overview</span></div><div class="twocol"><div class="chartcard"><b>{spend_chart_title}</b><canvas id="spendChart"></canvas></div><div class="chartcard"><b>{cofin_chart_title}</b><canvas id="cofinChart"></canvas></div></div><div style="margin-top:12px;">{finbar_html}</div>'}
+    <div class="section-label"><span><span class="num">{n5}</span>Stakeholder &amp; Gender Mainstreaming</span><span class="tag">{stk_tag}</span></div>
     <table class="stktable">
       <tr><th>Stakeholder Group</th><th>Role</th><th>Gender Status</th></tr>
       {stake_rows}
@@ -2833,384 +3095,37 @@ def _render_infographic_html(d: dict) -> str:
     <div style="font-size:9.5px;color:var(--ink-soft);margin-top:8px;">
       <strong style="color:var(--unblue-deep);">Gender Mainstreaming — {_esc(g_rating)}:</strong> {_esc(g_note[:350])}
     </div>
-
   </div>
-
   <footer>
     <span>Source: UNIDO IEU Terminal Evaluation, {rid_esc} ({_esc(str(d.get("year") or ""))})</span>
-    <span>Standardized infographic template · timeline / delay / financial / gender focus · v1</span>
+    <span>Standardized infographic template · v1</span>
   </footer>
 </div>
-
 <script>
-Chart.defaults.font.family = "Segoe UI, Arial, sans-serif";
-Chart.defaults.font.size = 9.5;
-Chart.defaults.color = "#5a6b7a";
-
-(function() {{
-  const events = {tl_events_json};
-  const tl = document.getElementById('timeline');
-  if (!tl || !events.length) return;
-  tl.innerHTML = '<div class="tlline"></div>';
-  events.forEach(e => {{
-    tl.innerHTML += '<div class="tlpoint ' + e.type + '" style="left:' + e.pos + '%;"></div>' +
-      '<div class="tlyear" style="left:' + e.pos + '%;">' + e.yr + '</div>' +
-      '<div class="tllabel" style="left:' + e.pos + '%;">' + e.lab + '</div>';
+Chart.defaults.font.family="Segoe UI,Arial,sans-serif";
+Chart.defaults.font.size=9.5;
+Chart.defaults.color="#5a6b7a";
+(function(){{
+  const events={tl_events_json};
+  const tl=document.getElementById('timeline');
+  if(!tl||!events.length)return;
+  tl.innerHTML='<div class="tlline"></div>';
+  events.forEach(e=>{{
+    tl.innerHTML+='<div class="tlpoint '+e.type+'" style="left:'+e.pos+'%;"></div>'+
+      '<div class="tlyear" style="left:'+e.pos+'%;">'+e.yr+'</div>'+
+      '<div class="tllabel" style="left:'+e.pos+'%;">'+e.lab+'</div>';
   }});
 }})();
-
-{"" if not has_financial else f"""(function() {{
-  if (typeof Chart === 'undefined') return;
-  new Chart(document.getElementById('spendChart'), {{
-    type: 'bar',
-    data: {{ labels: {fin_labels}, datasets: [{{ data: {fin_vals}, backgroundColor: {fin_colors}, borderRadius: 3 }}] }},
-    options: {{
-      plugins: {{ legend: {{ display: false }} }},
-      scales: {{
-        y: {{ beginAtZero: true, ticks: {{ callback: function(v) {{ return v>=1e6 ? '$'+(v/1e6).toFixed(1)+'M' : '$'+(v/1000).toFixed(0)+'K'; }} }} }},
-        x: {{ grid: {{ display: false }} }}
-      }}
-    }}
-  }});
-  {util_chart_js}
-}})();"""}
+{financial_js_block}
 </script>
 </body>
 </html>"""
 
 
 def _build_report_infographic(rid: str) -> bytes:
-    """Parse report data with regex heuristics then render a professional HTML infographic.
-    No LLM / API calls — all data extracted from ai_extractions + extracted_sections.
-    Returns UTF-8-encoded HTML bytes."""
+    """Parse + render infographic. No LLM calls. Returns UTF-8 HTML bytes."""
     data = _parse_report_data(rid)
     return _render_infographic_html(data).encode("utf-8")
-
-
-def _build_report_infographic_UNUSED(rid: str) -> bytes:  # kept for reference only
-    """OLD version — calls Claude API. Superseded by _build_report_infographic above."""
-    import textwrap, io
-
-    # ── Gather all data ───────────────────────────────────────────────────────
-    ai    = _load_ai_extraction(rid)
-    sec   = _load_sections_local(rid)
-    pilot = PILOT_METADATA.get(rid, {})
-    ctx   = ai.get("context", {})
-
-    title    = ctx.get("title") or pilot.get("title", "Evaluation Report")
-    year     = ctx.get("year") or pilot.get("year", "")
-    country  = ctx.get("country") or pilot.get("country", "")
-    region   = ctx.get("region") or pilot.get("region", "")
-    rtype    = ctx.get("report_type") or pilot.get("report_type", "Terminal Evaluation")
-    rating   = ctx.get("evaluation_rating") or pilot.get("evaluation_rating")
-    budget   = ctx.get("budget_usd") or pilot.get("budget_usd")
-    donor    = ctx.get("donor") or pilot.get("donor", "")
-    proj_id  = ctx.get("project_id") or pilot.get("project_id", "")
-    thematic = ai.get("primary_thematic_area") or pilot.get("thematic_category", "")
-    sdg_nums = sorted(
-        [int(k) for k in ai.get("sdg_mapping", {}).keys() if str(k).isdigit()] or
-        [int(s) for s in (pilot.get("sdgs") or []) if str(s).isdigit()]
-    )
-    lessons = (ai.get("lessons_learned") or pilot.get("lessons_learned") or [])
-    recs    = (ai.get("recommendations") or pilot.get("recommendations") or [])
-
-    # Claude-extracted structured data
-    ex = _extract_infographic_data(rid)
-
-    # ── Colour helpers ────────────────────────────────────────────────────────
-    DAC_COLOR = {
-        "Highly Satisfactory":       "#16a34a",
-        "Satisfactory":              "#22c55e",
-        "Moderately Satisfactory":   "#84cc16",
-        "Moderately Unsatisfactory": "#f59e0b",
-        "Unsatisfactory":            "#ef4444",
-        "Highly Unsatisfactory":     "#dc2626",
-        "Not Assessed":              "#9ca3af",
-    }
-    DAC_SCORE = {
-        "Highly Satisfactory": 6, "Satisfactory": 5, "Moderately Satisfactory": 4,
-        "Moderately Unsatisfactory": 3, "Unsatisfactory": 2,
-        "Highly Unsatisfactory": 1, "Not Assessed": 0,
-    }
-    SDG_COL = {
-        1:"#E5243B",2:"#DDA63A",3:"#4C9F38",4:"#C5192D",5:"#FF3A21",
-        6:"#26BDE2",7:"#FCC30B",8:"#A21942",9:"#FD6925",10:"#DD1367",
-        11:"#FD9D24",12:"#BF8B2E",13:"#3F7E44",14:"#0A97D9",15:"#56C02B",
-        16:"#00689D",17:"#19486A",
-    }
-    GENDER_COLOR = {
-        "Mainstreamed":           "#16a34a",
-        "Partially Mainstreamed": "#f59e0b",
-        "Not Mainstreamed":       "#ef4444",
-    }
-
-    rating_label = "N/A"; rating_color = "#9ca3af"
-    if rating:
-        rv = float(rating)
-        if rv >= 5.0:   rating_label, rating_color = "Highly Satisfactory", "#16a34a"
-        elif rv >= 4.0: rating_label, rating_color = "Satisfactory",        "#22c55e"
-        elif rv >= 3.0: rating_label, rating_color = "Mod. Satisfactory",   "#84cc16"
-        else:           rating_label, rating_color = "Unsatisfactory",      "#ef4444"
-
-    # ── Build HTML infographic ────────────────────────────────────────────────
-    def _esc(s): return str(s).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-
-    # DAC bars HTML
-    dac_fields = [
-        ("Relevance",      ex.get("dac_relevance",      "Not Assessed")),
-        ("Effectiveness",  ex.get("dac_effectiveness",  "Not Assessed")),
-        ("Efficiency",     ex.get("dac_efficiency",     "Not Assessed")),
-        ("Impact",         ex.get("dac_impact",         "Not Assessed")),
-        ("Sustainability", ex.get("dac_sustainability", "Not Assessed")),
-    ]
-    dac_html = ""
-    for crit, verdict in dac_fields:
-        score = DAC_SCORE.get(verdict, 0)
-        pct   = int(score / 6 * 100)
-        col   = DAC_COLOR.get(verdict, "#9ca3af")
-        dac_html += f"""
-        <div style="margin-bottom:10px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-            <span style="font-size:12px;font-weight:700;color:#1a1a2e;">{_esc(crit)}</span>
-            <span style="font-size:11px;color:{col};font-weight:700;">{_esc(verdict)}</span>
-          </div>
-          <div style="background:#e5e7eb;border-radius:4px;height:10px;">
-            <div style="width:{pct}%;background:{col};height:10px;border-radius:4px;"></div>
-          </div>
-        </div>"""
-
-    # Enablers & barriers HTML
-    enablers = (ex.get("enablers") or [])[:4]
-    barriers = (ex.get("barriers") or [])[:4]
-    en_html  = "".join(f'<li style="margin-bottom:6px;font-size:12px;color:#14532d;">✅ {_esc(e)}</li>' for e in enablers) or "<li style='color:#9ca3af;font-size:12px;'>No enablers identified</li>"
-    ba_html  = "".join(f'<li style="margin-bottom:6px;font-size:12px;color:#7f1d1d;">⚠️ {_esc(b)}</li>' for b in barriers) or "<li style='color:#9ca3af;font-size:12px;'>No barriers identified</li>"
-
-    # SDG badges HTML
-    sdg_html = ""
-    for n in sdg_nums[:12]:
-        c = SDG_COL.get(n, "#888")
-        sdg_html += f'<div style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:48px;height:48px;background:{c};color:white;font-weight:800;border-radius:6px;font-size:14px;margin:3px;"><span>{n}</span><span style="font-size:7px;opacity:0.9;">SDG</span></div>'
-
-    # Timeline HTML
-    s_yr  = ex.get("start_year")
-    e_yr  = ex.get("end_year")
-    p_dur = ex.get("planned_duration_years")
-    a_dur = ex.get("actual_duration_years")
-    delay_note = ex.get("delay_notes") or ""
-    timeline_html = ""
-    if p_dur and a_dur:
-        max_dur = max(p_dur, a_dur)
-        p_pct   = int(p_dur / max_dur * 100)
-        a_pct   = int(a_dur / max_dur * 100)
-        delay   = a_dur > p_dur
-        a_col   = "#ef4444" if delay else "#22c55e"
-        timeline_html = f"""
-        <div style="margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:3px;">
-            <span>Planned</span><span style="font-weight:700">{p_dur} year(s)</span>
-          </div>
-          <div style="background:#e5e7eb;border-radius:4px;height:12px;">
-            <div style="width:{p_pct}%;background:#22c55e;height:12px;border-radius:4px;"></div>
-          </div>
-        </div>
-        <div style="margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:3px;">
-            <span>Actual</span><span style="font-weight:700;color:{a_col}">{a_dur} year(s) {'⚠ DELAYED' if delay else '✓ ON TIME'}</span>
-          </div>
-          <div style="background:#e5e7eb;border-radius:4px;height:12px;">
-            <div style="width:{a_pct}%;background:{a_col};height:12px;border-radius:4px;"></div>
-          </div>
-        </div>
-        {'<p style="font-size:11px;color:#dc2626;margin-top:6px;">'+_esc(delay_note)+'</p>' if delay_note and delay else ''}
-        """
-        if s_yr or e_yr:
-            timeline_html += f'<p style="font-size:11px;color:#6b7280;margin-top:4px;">{s_yr or "?"} → {e_yr or "?"}</p>'
-    else:
-        timeline_html = '<p style="font-size:12px;color:#9ca3af;">Timeline data not available in source report.</p>'
-
-    # Lessons & recs
-    ll_html  = "".join(f'<li style="margin-bottom:8px;font-size:12px;color:#0c4a6e;line-height:1.5;">{_esc(l)}</li>' for l in lessons[:4]) or "<li style='color:#9ca3af;font-size:12px;'>—</li>"
-    rec_html = "".join(f'<li style="margin-bottom:8px;font-size:12px;color:#7c2d12;line-height:1.5;">{_esc(r)}</li>' for r in recs[:4]) or "<li style='color:#9ca3af;font-size:12px;'>—</li>"
-
-    gender_text = _esc(ex.get("gender_mainstreaming") or "No specific gender mainstreaming information available in this report.")
-    gender_rat  = ex.get("gender_rating") or "N/A"
-    gender_col  = GENDER_COLOR.get(gender_rat, "#9ca3af")
-    budget_str  = f"USD {budget/1e6:.1f}M" if budget else "N/A"
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>UNIDO Evaluation Infographic — {_esc(rid)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: 'Inter', Arial, sans-serif; background: #fff; color: #1a1a2e; }}
-  .page {{ width: 1200px; margin: 0 auto; padding: 0; }}
-  .header {{ background: #003DA5; color: white; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; }}
-  .header-left .brand {{ font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }}
-  .header-left .sub {{ font-size: 11px; color: #93c5fd; margin-top: 2px; }}
-  .header-left .title {{ font-size: 15px; font-weight: 700; margin-top: 8px; max-width: 700px; line-height: 1.4; }}
-  .header-right {{ text-align: right; font-size: 11px; color: #93c5fd; line-height: 1.8; }}
-  .stat-row {{ display: grid; grid-template-columns: repeat(6,1fr); gap: 4px; background: #f5f7fa; padding: 4px; }}
-  .stat-card {{ background: white; padding: 12px 10px; border-left: 4px solid; }}
-  .stat-card .label {{ font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }}
-  .stat-card .value {{ font-size: 16px; font-weight: 800; }}
-  .stat-card .sub {{ font-size: 10px; font-style: italic; margin-top: 2px; }}
-  .main-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: #f5f7fa; padding: 4px; }}
-  .panel {{ background: white; padding: 14px; }}
-  .panel-header {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: white; padding: 6px 10px; margin: -14px -14px 12px -14px; }}
-  .section-label {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 6px; padding: 5px 8px; color: white; border-radius: 4px; }}
-  .bottom-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: #f5f7fa; padding: 4px; padding-top: 0; }}
-  .footer {{ background: #f8faff; border-top: 3px solid #009EDB; padding: 14px 24px; display: flex; gap: 24px; align-items: flex-start; }}
-  .footer-badge {{ background: #ede9fe; border-radius: 6px; padding: 10px 14px; min-width: 200px; }}
-  .footer-badge .label {{ font-size: 9px; font-weight: 700; color: #7c3aed; text-transform: uppercase; }}
-  .footer-badge .value {{ font-size: 14px; font-weight: 800; color: #4c1d95; margin-top: 4px; }}
-  .footer-note {{ font-size: 10px; color: #6b7280; line-height: 1.6; flex: 1; }}
-  ul {{ padding-left: 16px; }}
-  @media print {{
-    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
-    .page {{ width: 100%; }}
-  }}
-</style>
-</head>
-<body>
-<div class="page">
-
-  <!-- HEADER -->
-  <div class="header">
-    <div class="header-left">
-      <div class="brand">UNIDO</div>
-      <div class="sub">Independent Evaluation Unit · Evaluation Intelligence Platform</div>
-      <div class="title">{_esc(title)}</div>
-    </div>
-    <div class="header-right">
-      <div>{_esc(rtype)}</div>
-      <div>{_esc(str(year))}</div>
-      <div>{_esc(country)}</div>
-      <div>{_esc(region)}</div>
-      {'<div style="margin-top:6px;font-size:10px;color:#cbd5e1;">Project ID: '+_esc(proj_id)+'</div>' if proj_id else ''}
-    </div>
-  </div>
-
-  <!-- STAT CARDS -->
-  <div class="stat-row">
-    <div class="stat-card" style="border-color:{rating_color};">
-      <div class="label">Overall Rating</div>
-      <div class="value" style="color:{rating_color};">{_esc(str(round(float(rating),1))+'/6') if rating else 'N/A'}</div>
-      <div class="sub" style="color:{rating_color};">{_esc(rating_label)}</div>
-    </div>
-    <div class="stat-card" style="border-color:#003DA5;">
-      <div class="label">Thematic Area</div>
-      <div class="value" style="color:#003DA5;font-size:12px;">{_esc(thematic or '—')}</div>
-    </div>
-    <div class="stat-card" style="border-color:#009EDB;">
-      <div class="label">Donor</div>
-      <div class="value" style="color:#009EDB;font-size:13px;">{_esc(donor or '—')}</div>
-    </div>
-    <div class="stat-card" style="border-color:#7c3aed;">
-      <div class="label">Budget</div>
-      <div class="value" style="color:#7c3aed;">{_esc(budget_str)}</div>
-    </div>
-    <div class="stat-card" style="border-color:#059669;">
-      <div class="label">SDGs Covered</div>
-      <div class="value" style="color:#059669;">{len(sdg_nums)}</div>
-      <div class="sub" style="color:#059669;">goals</div>
-    </div>
-    <div class="stat-card" style="border-color:{gender_col};">
-      <div class="label">Gender</div>
-      <div class="value" style="color:{gender_col};font-size:12px;">{_esc(gender_rat)}</div>
-    </div>
-  </div>
-
-  <!-- MAIN 3 COLUMNS -->
-  <div class="main-grid">
-
-    <!-- DAC CRITERIA -->
-    <div class="panel">
-      <div class="panel-header" style="background:#003DA5;">OECD-DAC Evaluation Criteria</div>
-      {dac_html}
-      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f0f0;">
-        <div style="font-size:9px;color:#6b7280;font-weight:700;margin-bottom:4px;">SCALE</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;">
-          {''.join(f'<span style="background:{c};color:white;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;">{a}</span>' for a,c in [("HS","#16a34a"),("S","#22c55e"),("MS","#84cc16"),("MU","#f59e0b"),("U","#ef4444"),("HU","#dc2626")])}
-        </div>
-      </div>
-    </div>
-
-    <!-- ENABLERS & BARRIERS + GENDER -->
-    <div class="panel">
-      <div class="panel-header" style="background:#0369a1;">Enablers, Barriers &amp; Gender</div>
-      <div style="background:#dcfce7;border-radius:6px;padding:10px;margin-bottom:10px;">
-        <div style="font-size:10px;font-weight:700;color:#166534;margin-bottom:6px;">✅ ENABLING FACTORS</div>
-        <ul style="list-style:none;padding:0;">{en_html}</ul>
-      </div>
-      <div style="background:#fee2e2;border-radius:6px;padding:10px;margin-bottom:10px;">
-        <div style="font-size:10px;font-weight:700;color:#991b1b;margin-bottom:6px;">⚠️ BARRIERS &amp; CHALLENGES</div>
-        <ul style="list-style:none;padding:0;">{ba_html}</ul>
-      </div>
-      <div style="background:#ede9fe;border-radius:6px;padding:10px;">
-        <div style="font-size:10px;font-weight:700;color:#5b21b6;margin-bottom:6px;">♀ GENDER MAINSTREAMING</div>
-        <span style="background:{gender_col};color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">{_esc(gender_rat)}</span>
-        <p style="font-size:11px;color:#4c1d95;margin-top:6px;line-height:1.5;">{gender_text}</p>
-      </div>
-    </div>
-
-    <!-- GEOGRAPHIC COVERAGE + SDGs -->
-    <div class="panel">
-      <div class="panel-header" style="background:#059669;">Geographic Coverage &amp; SDG Alignment</div>
-      <div style="background:#ecfdf5;border-radius:6px;padding:10px;margin-bottom:12px;">
-        <div style="font-size:10px;font-weight:700;color:#065f46;margin-bottom:4px;">🌍 COUNTRY / REGION</div>
-        <div style="font-size:18px;font-weight:800;color:#1a1a2e;">{_esc(country or '—')}</div>
-        <div style="font-size:12px;color:#065f46;font-weight:600;">{_esc(region or '—')}</div>
-      </div>
-      <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">SDG Alignment</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;">{sdg_html}</div>
-    </div>
-  </div>
-
-  <!-- BOTTOM ROW -->
-  <div class="bottom-grid">
-
-    <!-- TIMELINE -->
-    <div class="panel">
-      <div class="panel-header" style="background:#7c3aed;">Project Timeline</div>
-      {timeline_html}
-    </div>
-
-    <!-- LESSONS LEARNED -->
-    <div class="panel">
-      <div class="panel-header" style="background:#0369a1;">Key Lessons Learned</div>
-      <ul style="list-style:decimal;">{ll_html}</ul>
-    </div>
-
-    <!-- RECOMMENDATIONS -->
-    <div class="panel">
-      <div class="panel-header" style="background:#9a3412;">Key Recommendations</div>
-      <ul style="list-style:decimal;">{rec_html}</ul>
-    </div>
-  </div>
-
-  <!-- FOOTER -->
-  <div class="footer">
-    <div class="footer-badge">
-      <div class="label">Thematic Classification</div>
-      <div class="value">{_esc(thematic or '—')}</div>
-    </div>
-    <div class="footer-note">
-      <strong>UNEG Quality Note:</strong> This infographic was produced in accordance with UNEG Norms and Standards for Evaluation.
-      Content is derived from the official UNIDO independent evaluation report. Findings, conclusions, lessons and recommendations
-      represent the views of independent evaluators and do not necessarily reflect the position of UNIDO.<br/>
-      <span style="color:#9ca3af;">Source: UNIDO IEU Evaluation Portfolio · Generated by UNIDO Evaluation Intelligence Platform · {_esc(str(year))}</span>
-    </div>
-  </div>
-
-</div>
-</body>
-</html>"""
-
-    return html.encode("utf-8")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
