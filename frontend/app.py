@@ -2256,7 +2256,7 @@ def show_visualize_tab():
                             use_container_width=True, key="infog_gen_btn")
 
     if gen_btn and infog_rid:
-        with st.spinner("Claude is extracting insights and building your infographic…"):
+        with st.spinner("Building your infographic…"):
             try:
                 html_bytes = _build_report_infographic(infog_rid)
                 st.session_state[f"infog_html_{infog_rid}"] = html_bytes
@@ -2289,839 +2289,342 @@ def show_visualize_tab():
 # INFOGRAPHIC ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_infographic_data(rid: str) -> dict:
-    """Call Claude to extract structured infographic data from report text."""
-    import anthropic as _anthropic
+def _parse_report_data(rid: str) -> dict:
+    """Regex / heuristic parser — no LLM calls.
+    Extracts all infographic data from ai_extractions + extracted_sections + PILOT_METADATA."""
+    import re
 
-    ai  = _load_ai_extraction(rid)
-    sec = _load_sections_local(rid)
-    pilot = PILOT_METADATA.get(rid, {})
-
-    exec_sum  = ai.get("executive_summary", "")
-    secs_data = sec.get("sections", {})
-    concl     = secs_data.get("conclusions", "")
-    findings  = secs_data.get("findings", "") or secs_data.get("results", "")
-    lessons   = ai.get("lessons_learned") or []
-    recs      = ai.get("recommendations") or []
-
-    body = "\n\n".join(filter(None, [
-        f"EXECUTIVE SUMMARY:\n{exec_sum[:2000]}",
-        f"CONCLUSIONS:\n{concl[:3000]}",
-        f"KEY FINDINGS / RESULTS:\n{findings[:2000]}",
-        f"LESSONS LEARNED:\n" + "\n".join(f"- {l}" for l in lessons[:6]),
-        f"RECOMMENDATIONS:\n" + "\n".join(f"- {r}" for r in recs[:6]),
-    ]))
-
-    prompt = f"""You are a UNIDO evaluation analyst. Read this evaluation report excerpt and return ONLY a valid JSON object — no markdown fences, no explanation.
-
-REPORT TEXT:
-{body}
-
-Return this exact JSON structure (use null for any field you cannot determine):
-{{
-  "dac_relevance":      "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
-  "dac_effectiveness":  "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
-  "dac_efficiency":     "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
-  "dac_impact":         "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
-  "dac_sustainability": "Highly Satisfactory|Satisfactory|Moderately Satisfactory|Moderately Unsatisfactory|Unsatisfactory|Highly Unsatisfactory|Not Assessed",
-  "enablers": ["enabling factor 1 (max 12 words)", "enabling factor 2", "enabling factor 3", "enabling factor 4"],
-  "barriers": ["barrier 1 (max 12 words)", "barrier 2", "barrier 3", "barrier 4"],
-  "gender_mainstreaming": "2-3 sentence summary of how gender was addressed (or note if not addressed)",
-  "gender_rating": "Mainstreamed|Partially Mainstreamed|Not Mainstreamed",
-  "start_year": 2016,
-  "end_year": 2022,
-  "planned_duration_years": 4,
-  "actual_duration_years": 6,
-  "delay_notes": "one sentence on delays, or null if none"
-}}"""
-
-    try:
-        api_key = st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-
-    client = _anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=1024,
-        temperature=0,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = msg.content[0].text.strip()
-    # strip markdown fences if present
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
-
-
-def _build_report_infographic(rid: str) -> bytes:
-    """Extract data via Claude then render a self-contained HTML infographic.
-    Returns UTF-8 encoded HTML bytes — no matplotlib, no native deps."""
-    import textwrap, io
-
-    # ── Gather all data ───────────────────────────────────────────────────────
     ai    = _load_ai_extraction(rid)
     sec   = _load_sections_local(rid)
     pilot = PILOT_METADATA.get(rid, {})
     ctx   = ai.get("context", {})
 
-    title    = ctx.get("title") or pilot.get("title", "Evaluation Report")
-    year     = ctx.get("year") or pilot.get("year", "")
-    country  = ctx.get("country") or pilot.get("country", "")
-    region   = ctx.get("region") or pilot.get("region", "")
-    rtype    = ctx.get("report_type") or pilot.get("report_type", "Terminal Evaluation")
-    rating   = ctx.get("evaluation_rating") or pilot.get("evaluation_rating")
-    budget   = ctx.get("budget_usd") or pilot.get("budget_usd")
-    donor    = ctx.get("donor") or pilot.get("donor", "")
-    proj_id  = ctx.get("project_id") or pilot.get("project_id", "")
-    thematic = ai.get("primary_thematic_area") or pilot.get("thematic_category", "")
-    sdg_nums = sorted(
-        [int(k) for k in ai.get("sdg_mapping", {}).keys() if str(k).isdigit()] or
-        [int(s) for s in (pilot.get("sdgs") or []) if str(s).isdigit()]
-    )
-    lessons = (ai.get("lessons_learned") or pilot.get("lessons_learned") or [])
-    recs    = (ai.get("recommendations") or pilot.get("recommendations") or [])
-
-    # Claude-extracted structured data
-    ex = _extract_infographic_data(rid)
-
-    # ── Colour helpers ────────────────────────────────────────────────────────
-    DAC_COLOR = {
-        "Highly Satisfactory":       "#16a34a",
-        "Satisfactory":              "#22c55e",
-        "Moderately Satisfactory":   "#84cc16",
-        "Moderately Unsatisfactory": "#f59e0b",
-        "Unsatisfactory":            "#ef4444",
-        "Highly Unsatisfactory":     "#dc2626",
-        "Not Assessed":              "#9ca3af",
-    }
-    DAC_SCORE = {
-        "Highly Satisfactory": 6, "Satisfactory": 5, "Moderately Satisfactory": 4,
-        "Moderately Unsatisfactory": 3, "Unsatisfactory": 2,
-        "Highly Unsatisfactory": 1, "Not Assessed": 0,
-    }
-    SDG_COL = {
-        1:"#E5243B",2:"#DDA63A",3:"#4C9F38",4:"#C5192D",5:"#FF3A21",
-        6:"#26BDE2",7:"#FCC30B",8:"#A21942",9:"#FD6925",10:"#DD1367",
-        11:"#FD9D24",12:"#BF8B2E",13:"#3F7E44",14:"#0A97D9",15:"#56C02B",
-        16:"#00689D",17:"#19486A",
-    }
-    GENDER_COLOR = {
-        "Mainstreamed":           "#16a34a",
-        "Partially Mainstreamed": "#f59e0b",
-        "Not Mainstreamed":       "#ef4444",
-    }
-
-    rating_label = "N/A"; rating_color = "#9ca3af"
-    if rating:
-        rv = float(rating)
-        if rv >= 5.0:   rating_label, rating_color = "Highly Satisfactory", "#16a34a"
-        elif rv >= 4.0: rating_label, rating_color = "Satisfactory",        "#22c55e"
-        elif rv >= 3.0: rating_label, rating_color = "Mod. Satisfactory",   "#84cc16"
-        else:           rating_label, rating_color = "Unsatisfactory",      "#ef4444"
-
-    # ── Build HTML infographic ────────────────────────────────────────────────
-    def _esc(s): return str(s).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-
-    # DAC bars HTML
-    dac_fields = [
-        ("Relevance",      ex.get("dac_relevance",      "Not Assessed")),
-        ("Effectiveness",  ex.get("dac_effectiveness",  "Not Assessed")),
-        ("Efficiency",     ex.get("dac_efficiency",     "Not Assessed")),
-        ("Impact",         ex.get("dac_impact",         "Not Assessed")),
-        ("Sustainability", ex.get("dac_sustainability", "Not Assessed")),
-    ]
-    dac_html = ""
-    for crit, verdict in dac_fields:
-        score = DAC_SCORE.get(verdict, 0)
-        pct   = int(score / 6 * 100)
-        col   = DAC_COLOR.get(verdict, "#9ca3af")
-        dac_html += f"""
-        <div style="margin-bottom:10px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-            <span style="font-size:12px;font-weight:700;color:#1a1a2e;">{_esc(crit)}</span>
-            <span style="font-size:11px;color:{col};font-weight:700;">{_esc(verdict)}</span>
-          </div>
-          <div style="background:#e5e7eb;border-radius:4px;height:10px;">
-            <div style="width:{pct}%;background:{col};height:10px;border-radius:4px;"></div>
-          </div>
-        </div>"""
-
-    # Enablers & barriers HTML
-    enablers = (ex.get("enablers") or [])[:4]
-    barriers = (ex.get("barriers") or [])[:4]
-    en_html  = "".join(f'<li style="margin-bottom:6px;font-size:12px;color:#14532d;">✅ {_esc(e)}</li>' for e in enablers) or "<li style='color:#9ca3af;font-size:12px;'>No enablers identified</li>"
-    ba_html  = "".join(f'<li style="margin-bottom:6px;font-size:12px;color:#7f1d1d;">⚠️ {_esc(b)}</li>' for b in barriers) or "<li style='color:#9ca3af;font-size:12px;'>No barriers identified</li>"
-
-    # SDG badges HTML
-    sdg_html = ""
-    for n in sdg_nums[:12]:
-        c = SDG_COL.get(n, "#888")
-        sdg_html += f'<div style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:48px;height:48px;background:{c};color:white;font-weight:800;border-radius:6px;font-size:14px;margin:3px;"><span>{n}</span><span style="font-size:7px;opacity:0.9;">SDG</span></div>'
-
-    # Timeline HTML
-    s_yr  = ex.get("start_year")
-    e_yr  = ex.get("end_year")
-    p_dur = ex.get("planned_duration_years")
-    a_dur = ex.get("actual_duration_years")
-    delay_note = ex.get("delay_notes") or ""
-    timeline_html = ""
-    if p_dur and a_dur:
-        max_dur = max(p_dur, a_dur)
-        p_pct   = int(p_dur / max_dur * 100)
-        a_pct   = int(a_dur / max_dur * 100)
-        delay   = a_dur > p_dur
-        a_col   = "#ef4444" if delay else "#22c55e"
-        timeline_html = f"""
-        <div style="margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:3px;">
-            <span>Planned</span><span style="font-weight:700">{p_dur} year(s)</span>
-          </div>
-          <div style="background:#e5e7eb;border-radius:4px;height:12px;">
-            <div style="width:{p_pct}%;background:#22c55e;height:12px;border-radius:4px;"></div>
-          </div>
-        </div>
-        <div style="margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:3px;">
-            <span>Actual</span><span style="font-weight:700;color:{a_col}">{a_dur} year(s) {'⚠ DELAYED' if delay else '✓ ON TIME'}</span>
-          </div>
-          <div style="background:#e5e7eb;border-radius:4px;height:12px;">
-            <div style="width:{a_pct}%;background:{a_col};height:12px;border-radius:4px;"></div>
-          </div>
-        </div>
-        {'<p style="font-size:11px;color:#dc2626;margin-top:6px;">'+_esc(delay_note)+'</p>' if delay_note and delay else ''}
-        """
-        if s_yr or e_yr:
-            timeline_html += f'<p style="font-size:11px;color:#6b7280;margin-top:4px;">{s_yr or "?"} → {e_yr or "?"}</p>'
-    else:
-        timeline_html = '<p style="font-size:12px;color:#9ca3af;">Timeline data not available in source report.</p>'
-
-    # Lessons & recs
-    ll_html  = "".join(f'<li style="margin-bottom:8px;font-size:12px;color:#0c4a6e;line-height:1.5;">{_esc(l)}</li>' for l in lessons[:4]) or "<li style='color:#9ca3af;font-size:12px;'>—</li>"
-    rec_html = "".join(f'<li style="margin-bottom:8px;font-size:12px;color:#7c2d12;line-height:1.5;">{_esc(r)}</li>' for r in recs[:4]) or "<li style='color:#9ca3af;font-size:12px;'>—</li>"
-
-    gender_text = _esc(ex.get("gender_mainstreaming") or "No specific gender mainstreaming information available in this report.")
-    gender_rat  = ex.get("gender_rating") or "N/A"
-    gender_col  = GENDER_COLOR.get(gender_rat, "#9ca3af")
-    budget_str  = f"USD {budget/1e6:.1f}M" if budget else "N/A"
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>UNIDO Evaluation Infographic — {_esc(rid)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: 'Inter', Arial, sans-serif; background: #fff; color: #1a1a2e; }}
-  .page {{ width: 1200px; margin: 0 auto; padding: 0; }}
-  .header {{ background: #003DA5; color: white; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; }}
-  .header-left .brand {{ font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }}
-  .header-left .sub {{ font-size: 11px; color: #93c5fd; margin-top: 2px; }}
-  .header-left .title {{ font-size: 15px; font-weight: 700; margin-top: 8px; max-width: 700px; line-height: 1.4; }}
-  .header-right {{ text-align: right; font-size: 11px; color: #93c5fd; line-height: 1.8; }}
-  .stat-row {{ display: grid; grid-template-columns: repeat(6,1fr); gap: 4px; background: #f5f7fa; padding: 4px; }}
-  .stat-card {{ background: white; padding: 12px 10px; border-left: 4px solid; }}
-  .stat-card .label {{ font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }}
-  .stat-card .value {{ font-size: 16px; font-weight: 800; }}
-  .stat-card .sub {{ font-size: 10px; font-style: italic; margin-top: 2px; }}
-  .main-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: #f5f7fa; padding: 4px; }}
-  .panel {{ background: white; padding: 14px; }}
-  .panel-header {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: white; padding: 6px 10px; margin: -14px -14px 12px -14px; }}
-  .section-label {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 6px; padding: 5px 8px; color: white; border-radius: 4px; }}
-  .bottom-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: #f5f7fa; padding: 4px; padding-top: 0; }}
-  .footer {{ background: #f8faff; border-top: 3px solid #009EDB; padding: 14px 24px; display: flex; gap: 24px; align-items: flex-start; }}
-  .footer-badge {{ background: #ede9fe; border-radius: 6px; padding: 10px 14px; min-width: 200px; }}
-  .footer-badge .label {{ font-size: 9px; font-weight: 700; color: #7c3aed; text-transform: uppercase; }}
-  .footer-badge .value {{ font-size: 14px; font-weight: 800; color: #4c1d95; margin-top: 4px; }}
-  .footer-note {{ font-size: 10px; color: #6b7280; line-height: 1.6; flex: 1; }}
-  ul {{ padding-left: 16px; }}
-  @media print {{
-    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
-    .page {{ width: 100%; }}
-  }}
-</style>
-</head>
-<body>
-<div class="page">
-
-  <!-- HEADER -->
-  <div class="header">
-    <div class="header-left">
-      <div class="brand">UNIDO</div>
-      <div class="sub">Independent Evaluation Unit · Evaluation Intelligence Platform</div>
-      <div class="title">{_esc(title)}</div>
-    </div>
-    <div class="header-right">
-      <div>{_esc(rtype)}</div>
-      <div>{_esc(str(year))}</div>
-      <div>{_esc(country)}</div>
-      <div>{_esc(region)}</div>
-      {'<div style="margin-top:6px;font-size:10px;color:#cbd5e1;">Project ID: '+_esc(proj_id)+'</div>' if proj_id else ''}
-    </div>
-  </div>
-
-  <!-- STAT CARDS -->
-  <div class="stat-row">
-    <div class="stat-card" style="border-color:{rating_color};">
-      <div class="label">Overall Rating</div>
-      <div class="value" style="color:{rating_color};">{_esc(str(round(float(rating),1))+'/6') if rating else 'N/A'}</div>
-      <div class="sub" style="color:{rating_color};">{_esc(rating_label)}</div>
-    </div>
-    <div class="stat-card" style="border-color:#003DA5;">
-      <div class="label">Thematic Area</div>
-      <div class="value" style="color:#003DA5;font-size:12px;">{_esc(thematic or '—')}</div>
-    </div>
-    <div class="stat-card" style="border-color:#009EDB;">
-      <div class="label">Donor</div>
-      <div class="value" style="color:#009EDB;font-size:13px;">{_esc(donor or '—')}</div>
-    </div>
-    <div class="stat-card" style="border-color:#7c3aed;">
-      <div class="label">Budget</div>
-      <div class="value" style="color:#7c3aed;">{_esc(budget_str)}</div>
-    </div>
-    <div class="stat-card" style="border-color:#059669;">
-      <div class="label">SDGs Covered</div>
-      <div class="value" style="color:#059669;">{len(sdg_nums)}</div>
-      <div class="sub" style="color:#059669;">goals</div>
-    </div>
-    <div class="stat-card" style="border-color:{gender_col};">
-      <div class="label">Gender</div>
-      <div class="value" style="color:{gender_col};font-size:12px;">{_esc(gender_rat)}</div>
-    </div>
-  </div>
-
-  <!-- MAIN 3 COLUMNS -->
-  <div class="main-grid">
-
-    <!-- DAC CRITERIA -->
-    <div class="panel">
-      <div class="panel-header" style="background:#003DA5;">OECD-DAC Evaluation Criteria</div>
-      {dac_html}
-      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f0f0;">
-        <div style="font-size:9px;color:#6b7280;font-weight:700;margin-bottom:4px;">SCALE</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;">
-          {''.join(f'<span style="background:{c};color:white;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;">{a}</span>' for a,c in [("HS","#16a34a"),("S","#22c55e"),("MS","#84cc16"),("MU","#f59e0b"),("U","#ef4444"),("HU","#dc2626")])}
-        </div>
-      </div>
-    </div>
-
-    <!-- ENABLERS & BARRIERS + GENDER -->
-    <div class="panel">
-      <div class="panel-header" style="background:#0369a1;">Enablers, Barriers &amp; Gender</div>
-      <div style="background:#dcfce7;border-radius:6px;padding:10px;margin-bottom:10px;">
-        <div style="font-size:10px;font-weight:700;color:#166534;margin-bottom:6px;">✅ ENABLING FACTORS</div>
-        <ul style="list-style:none;padding:0;">{en_html}</ul>
-      </div>
-      <div style="background:#fee2e2;border-radius:6px;padding:10px;margin-bottom:10px;">
-        <div style="font-size:10px;font-weight:700;color:#991b1b;margin-bottom:6px;">⚠️ BARRIERS &amp; CHALLENGES</div>
-        <ul style="list-style:none;padding:0;">{ba_html}</ul>
-      </div>
-      <div style="background:#ede9fe;border-radius:6px;padding:10px;">
-        <div style="font-size:10px;font-weight:700;color:#5b21b6;margin-bottom:6px;">♀ GENDER MAINSTREAMING</div>
-        <span style="background:{gender_col};color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">{_esc(gender_rat)}</span>
-        <p style="font-size:11px;color:#4c1d95;margin-top:6px;line-height:1.5;">{gender_text}</p>
-      </div>
-    </div>
-
-    <!-- GEOGRAPHIC COVERAGE + SDGs -->
-    <div class="panel">
-      <div class="panel-header" style="background:#059669;">Geographic Coverage &amp; SDG Alignment</div>
-      <div style="background:#ecfdf5;border-radius:6px;padding:10px;margin-bottom:12px;">
-        <div style="font-size:10px;font-weight:700;color:#065f46;margin-bottom:4px;">🌍 COUNTRY / REGION</div>
-        <div style="font-size:18px;font-weight:800;color:#1a1a2e;">{_esc(country or '—')}</div>
-        <div style="font-size:12px;color:#065f46;font-weight:600;">{_esc(region or '—')}</div>
-      </div>
-      <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">SDG Alignment</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;">{sdg_html}</div>
-    </div>
-  </div>
-
-  <!-- BOTTOM ROW -->
-  <div class="bottom-grid">
-
-    <!-- TIMELINE -->
-    <div class="panel">
-      <div class="panel-header" style="background:#7c3aed;">Project Timeline</div>
-      {timeline_html}
-    </div>
-
-    <!-- LESSONS LEARNED -->
-    <div class="panel">
-      <div class="panel-header" style="background:#0369a1;">Key Lessons Learned</div>
-      <ul style="list-style:decimal;">{ll_html}</ul>
-    </div>
-
-    <!-- RECOMMENDATIONS -->
-    <div class="panel">
-      <div class="panel-header" style="background:#9a3412;">Key Recommendations</div>
-      <ul style="list-style:decimal;">{rec_html}</ul>
-    </div>
-  </div>
-
-  <!-- FOOTER -->
-  <div class="footer">
-    <div class="footer-badge">
-      <div class="label">Thematic Classification</div>
-      <div class="value">{_esc(thematic or '—')}</div>
-    </div>
-    <div class="footer-note">
-      <strong>UNEG Quality Note:</strong> This infographic was produced in accordance with UNEG Norms and Standards for Evaluation.
-      Content is derived from the official UNIDO independent evaluation report. Findings, conclusions, lessons and recommendations
-      represent the views of independent evaluators and do not necessarily reflect the position of UNIDO.<br/>
-      <span style="color:#9ca3af;">Source: UNIDO IEU Evaluation Portfolio · Generated by UNIDO Evaluation Intelligence Platform · {_esc(str(year))}</span>
-    </div>
-  </div>
-
-</div>
-</body>
-</html>"""
-
-    return html.encode("utf-8")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB 4 — OECD-DAC Analysis
-# ─────────────────────────────────────────────────────────────────────────────
-
-def show_dac_tab():
-    load_reports()
-    # Demo phase: restrict to the 4 verified pilot reports only
-    all_reps = [r for r in (st.session_state.all_reports or [])
-                if r.get("report_id") in PILOT_METADATA]
-
-    if not all_reps:
-        st.info("No reports indexed yet.")
-        return
-
-    st.markdown(
-        "Cross-portfolio analysis across the 5 OECD-DAC evaluation criteria. "
-        "Select reports to compare their evidence coverage and browse verbatim passages "
-        "across Relevance, Effectiveness, Efficiency, Impact, and Sustainability."
-    )
-
-    col_left, col_right = st.columns([3, 7])
-
-    # ── Report selector ──────────────────────────────────────────────────────
-    with col_left:
-        st.markdown("#### Select Reports")
-        mode = st.radio("Mode", ["Single report", "Compare multiple"], key="dac_mode",
-                        horizontal=True)
-
-        titles = {r["report_id"]: f"{r.get('year','')} — {r.get('title','')[:50]}"
-                  for r in all_reps}
-
-        if mode == "Single report":
-            sel_id = st.selectbox("Report", list(titles.keys()),
-                                  format_func=lambda x: titles.get(x, x),
-                                  key="dac_single")
-            dac_report_ids = [sel_id] if sel_id else []
-        else:
-            selected = st.multiselect("Reports (up to 5)", list(titles.keys()),
-                                      format_func=lambda x: titles.get(x, x),
-                                      max_selections=5, key="dac_multi")
-            dac_report_ids = selected
-
-        analyse = st.button("Analyse", type="primary", use_container_width=True)
-
-    # ── Analysis panel ────────────────────────────────────────────────────────
-    with col_right:
-        if not dac_report_ids:
-            st.info("Select a report on the left and click Analyse.")
-            return
-
-        if analyse or st.session_state.get("dac_results"):
-            if analyse:
-                with st.spinner("Retrieving DAC evidence…"):
-                    try:
-                        r = api("GET", "/api/v1/dac-evidence",
-                                params={"report_ids": ",".join(dac_report_ids)})
-                        result = r.json() if r.status_code == 200 else {}
-                        st.session_state["dac_results"] = result
-                        st.session_state["dac_report_ids"] = dac_report_ids
-                    except Exception as e:
-                        st.error(str(e))
-                        return
-
-            result = st.session_state.get("dac_results", {})
-            evidence = result.get("evidence", {})
-            chunk_counts = result.get("chunk_counts", {})
-
-            # ── Radar chart ────────────────────────────────────────────────
-            st.markdown("#### Evidence Coverage Radar")
-            st.caption(
-                "Score = relative volume of evidence passages found for each criterion "
-                "(RAG-based proxy — not an AI-generated quality rating)."
-            )
-
-            fig_radar = go.Figure()
-            for rid in dac_report_ids:
-                counts = chunk_counts.get(rid, {c: 0 for c in DAC_CRITERIA})
-                max_c  = max(counts.values()) or 1
-                scores = [round((counts.get(c, 0) / max_c) * 10, 1) for c in DAC_CRITERIA]
-                rep_title = next(
-                    (r.get("title","")[:30] for r in all_reps if r["report_id"] == rid), rid[:8]
-                )
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=scores + [scores[0]],
-                    theta=DAC_LABELS + [DAC_LABELS[0]],
-                    name=rep_title,
-                    fill="toself",
-                    opacity=0.6,
-                ))
-
-            fig_radar.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-                showlegend=True if len(dac_report_ids) > 1 else False,
-                margin=dict(t=30, b=20, l=30, r=30),
-                height=380,
-                paper_bgcolor="rgba(0,0,0,0)",
-            )
-            st.plotly_chart(fig_radar, use_container_width=True)
-
-            # ── AI Summary per criterion ──────────────────────────────────
-            st.markdown("#### AI Summary by Criterion")
-            if st.button("✨ Generate AI Summary across criteria", type="primary", use_container_width=True, key="dac_ai_btn"):
-                dac_rids = st.session_state.get("dac_report_ids", [])
-                with st.spinner("Claude is analysing DAC evidence across selected reports…"):
-                    try:
-                        # Build context from evidence passages
-                        ev = evidence
-                        context_lines = []
-                        for crit, label in zip(DAC_CRITERIA, DAC_LABELS):
-                            passages = ev.get(crit, [])[:5]
-                            if passages:
-                                context_lines.append(f"\n### {label.upper()}\n")
-                                for p in passages:
-                                    context_lines.append(f"[{p.get('report_title','')}]: {p.get('text','')[:400]}")
-                        context_text = "\n".join(context_lines)
-                        payload = {
-                            "query": f"Provide a concise analytical summary of the evaluation evidence for each of the 5 OECD-DAC criteria: Relevance, Effectiveness, Efficiency, Impact, and Sustainability. For each criterion, identify the key patterns and cross-cutting findings across the selected reports. Use the evidence provided.\n\nEVIDENCE:\n{context_text}",
-                            "report_ids": dac_rids,
-                        }
-                        r_ai = api("POST", "/api/v1/synthesize", json=payload)
-                        if r_ai.status_code == 200:
-                            st.session_state["dac_ai_summary"] = r_ai.json().get("answer", "")
-                        else:
-                            st.error(f"AI summary failed: {r_ai.status_code}")
-                    except Exception as e:
-                        st.error(str(e))
-
-            if st.session_state.get("dac_ai_summary"):
-                st.markdown(
-                    '<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;' +
-                    'padding:1rem 1.2rem;margin:0.5rem 0 1rem;font-size:0.87rem;line-height:1.7;">',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(st.session_state["dac_ai_summary"])
-                st.markdown('</div>', unsafe_allow_html=True)
-                if st.button("Clear summary", key="dac_clear_sum"):
-                    del st.session_state["dac_ai_summary"]
-                    st.rerun()
-
-            st.divider()
-
-            # ── Evidence browser ───────────────────────────────────────────
-            st.markdown("#### Evidence Browser")
-            st.caption("Click a criterion tab to read verbatim passages from the reports.")
-
-            tab_labels = [f"{lbl} ({len(evidence.get(c,[]))})"
-                          for c, lbl in zip(DAC_CRITERIA, DAC_LABELS)]
-            tabs = st.tabs(tab_labels)
-
-            for tab, criterion, label in zip(tabs, DAC_CRITERIA, DAC_LABELS):
-                with tab:
-                    passages = evidence.get(criterion, [])
-                    if not passages:
-                        st.caption("No passages found for this criterion in the selected reports.")
-                        continue
-                    for p in passages[:15]:  # cap at 15 per criterion
-                        st.markdown(f"""
-                        <div class="dac-card">
-                          <div class="passage-title">
-                            {p.get("report_title","")}
-                          </div>
-                          <div class="passage-meta">
-                            {p.get("year","")} · {p.get("country","")}
-                            &nbsp;·&nbsp; Page ~{p.get("page_hint","")}
-                          </div>
-                          <div class="dac-quote">{p.get("text","")[:600]}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Admin tab
-# ─────────────────────────────────────────────────────────────────────────────
-
-def show_admin_tab():
-    st.markdown("## User Management")
-    st.markdown(
-        "You are the administrator. Add, deactivate, or remove users. "
-        "Changes take effect immediately."
-    )
-
+    # ── Core metadata ────────────────────────────────────────────────────────
+    title      = ctx.get("title")       or pilot.get("title", rid)
+    year       = ctx.get("year")        or pilot.get("year")
+    country    = ctx.get("country")     or pilot.get("country", "")
+    region     = ctx.get("region")      or pilot.get("region", "")
+    rtype      = ctx.get("report_type") or pilot.get("report_type", "Terminal Evaluation")
+    donor      = ctx.get("donor")       or pilot.get("donor", "")
+    project_id = ctx.get("project_id")  or pilot.get("project_id", "")
+    thematic   = ai.get("primary_thematic_area") or pilot.get("thematic_category", "")
+    budget_usd = ctx.get("budget_usd")  or pilot.get("budget_usd")
     try:
-        resp = api("GET", "/api/v1/admin/users")
-        data = resp.json() if resp.status_code == 200 else {}
-    except Exception as e:
-        st.error(str(e)); return
+        year = int(year) if year else None
+    except (ValueError, TypeError):
+        year = None
+    try:
+        budget_usd = float(budget_usd) if budget_usd else None
+    except (ValueError, TypeError):
+        budget_usd = None
 
-    users   = data.get("users", [])
-    sessions= data.get("active_sessions", [])
+    # ── Aggregate text corpus ─────────────────────────────────────────────────
+    secs_data = sec.get("sections", {})
+    parts = [
+        ai.get("executive_summary", ""),
+        secs_data.get("conclusions", "") or "",
+        secs_data.get("findings", "") or secs_data.get("results", "") or "",
+    ]
+    corpus = "\n\n".join(p for p in parts if p and len(p) > 50)
 
-    st.markdown(f"### Users ({len(users)}/6 slots)")
-    for u in users:
-        c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
-        with c1:
-            rc = "role-admin" if u["role"] == "admin" else "role-user"
-            ac = "color:#22c55e" if u["active"] else "color:#ef4444"
-            st.markdown(
-                f'**{u["display_name"]}** (@{u["username"]})<br>'
-                f'<span class="role-badge {rc}">{u["role"]}</span> '
-                f'<span style="font-size:.78rem;{ac}">{"● Active" if u["active"] else "● Inactive"}</span>',
-                unsafe_allow_html=True,
-            )
-        with c2:
-            st.caption(u.get("created_at","")[:10])
-        with c3:
-            if u["username"] != st.session_state.username:
-                lbl = "Deactivate" if u["active"] else "Activate"
-                if st.button(lbl, key=f"tgl_{u['username']}"):
-                    r = api("PATCH", f"/api/v1/admin/users/{u['username']}/active",
-                            json={"active": not u["active"]})
-                    if r.status_code == 200:
-                        st.success(r.json()["detail"]); st.rerun()
-                    else:
-                        st.error(r.json().get("detail","Error"))
-        with c4:
-            if u["username"] != st.session_state.username:
-                if st.button("", key=f"del_{u['username']}"):
-                    r = api("DELETE", f"/api/v1/admin/users/{u['username']}")
-                    if r.status_code == 200:
-                        st.success(r.json()["detail"]); st.rerun()
-                    else:
-                        st.error(r.json().get("detail","Error"))
-        st.divider()
+    # ── Duration parsing ─────────────────────────────────────────────────────
+    planned_months = None
+    actual_months  = None
 
-    if sessions:
-        st.markdown(f"### Active sessions ({len(sessions)})")
-        for s in sessions:
-            st.caption(
-                f"• {{s['display_name']}} (@{{s['username']}}) — "
-                f"logged in {s['login_time'][:19].replace('T',' ')} UTC"
-            )
+    month_re = re.compile(r'(\d+)\s*[-–]?\s*month(?:s)?', re.IGNORECASE)
+    month_vals = [int(m.group(1)) for m in month_re.finditer(corpus) if 6 <= int(m.group(1)) <= 240]
 
-    st.divider()
+    year_dur_re = re.compile(
+        r'(\d+)\s+year[s]?\s+(?:implementation\s+)?(?:period|duration|project)', re.IGNORECASE)
+    year_dur_vals = [int(m.group(1)) * 12 for m in year_dur_re.finditer(corpus)
+                     if 1 <= int(m.group(1)) <= 20]
 
-    st.markdown("### Add new user")
-    with st.form("add_user"):
-        ca, cb = st.columns(2)
-        with ca:
-            nu = st.text_input("Username (lowercase, no spaces)", placeholder="sarah.jones")
-            np = st.text_input("Temporary password (min 8 chars)", type="password")
-        with cb:
-            nd = st.text_input("Full name", placeholder="Sarah Jones")
-            nr = st.selectbox("Role", ["user", "admin"])
-        if st.form_submit_button("Create user", type="primary"):
-            if not all([nu, np, nd]):
-                st.error("All fields required.")
-            elif len(np) < 8:
-                st.error("Password must be ≥ 8 characters.")
-            else:
-                r = api("POST", "/api/v1/admin/users",
-                        json={"username": nu, "password": np, "display_name": nd, "role": nr})
-                if r.status_code == 200:
-                    st.success(f" User '{nu}' created."); st.rerun()
-                else:
-                    st.error(r.json().get("detail","Error"))
+    all_durations = sorted(set(month_vals + year_dur_vals))
 
-    st.divider()
-    st.markdown("### Reset a user's password")
-    usernames = [u["username"] for u in users if u["username"] != st.session_state.username]
-    if usernames:
-        with st.form("reset_pw"):
-            cx, cy = st.columns(2)
-            with cx:
-                pw_user = st.selectbox("User", usernames)
-            with cy:
-                new_pw = st.text_input("New password", type="password")
-            if st.form_submit_button("Reset password"):
-                if not new_pw or len(new_pw) < 8:
-                    st.error("Password must be ≥ 8 characters.")
-                else:
-                    r = api("POST", f"/api/v1/admin/users/{pw_user}/password",
-                            json={"new_password": new_pw})
-                    if r.status_code == 200:
-                        st.success(r.json()["detail"])
-                    else:
-                        st.error(r.json().get("detail","Error"))
+    ext_re = re.compile(r'(?:extended?|extension)\s+(?:by|of)\s+(\d+)\s*month', re.IGNORECASE)
+    ext_match = ext_re.search(corpus)
+    ext_months = int(ext_match.group(1)) if ext_match else 0
+
+    if len(all_durations) >= 2:
+        planned_months = all_durations[0]
+        actual_months  = all_durations[-1]
+    elif len(all_durations) == 1:
+        planned_months = all_durations[0]
+        actual_months  = planned_months + ext_months if ext_months else planned_months
+
+    # ── Start / end year ────────────────────────────────────────────────────
+    start_year = None
+    end_year   = None
+
+    range_re = re.compile(r'\b(20[01]\d)\s*(?:[-–]|to|through)\s*(20[012]\d)\b')
+    for m in range_re.finditer(corpus):
+        sy, ey = int(m.group(1)), int(m.group(2))
+        if ey > sy and (ey - sy) <= 20:
+            if not start_year: start_year = sy
+            if not end_year:   end_year   = ey
+            break
+
+    if not start_year:
+        sp = re.search(
+            r'(?:commenced?|started?|initiated?|launched?|began)\s+in\s+(20[01]\d)',
+            corpus, re.IGNORECASE)
+        if sp: start_year = int(sp.group(1))
+    if not end_year:
+        ep = re.search(
+            r'(?:ended?|completed?|closed?|concluded?)\s+in\s+(20[012]\d)',
+            corpus, re.IGNORECASE)
+        if ep: end_year = int(ep.group(1))
+
+    if not start_year and year and planned_months:
+        start_year = year - round(planned_months / 12)
+    if not end_year and year:
+        end_year = year
+
+    planned_end_year = None
+    actual_end_year  = None
+    if start_year and planned_months:
+        planned_end_year = start_year + round(planned_months / 12)
+    elif end_year:
+        planned_end_year = end_year
+    if start_year and actual_months:
+        actual_end_year = start_year + round(actual_months / 12)
+    elif end_year:
+        actual_end_year = end_year
+
+    has_delay    = bool(planned_months and actual_months and actual_months > planned_months)
+    delay_months = (actual_months - planned_months) if has_delay else 0
+
+    # ── Financial parsing ────────────────────────────────────────────────────
+    def _extract_amounts(text):
+        amounts = []
+        patterns = [
+            (r'USD\s+([\d,]+(?:\.\d+)?)\s*million', 1e6),
+            (r'US\$\s*([\d,]+(?:\.\d+)?)\s*million', 1e6),
+            (r'\$([\d,]+(?:\.\d+)?)\s*million', 1e6),
+            (r'USD\s*([\d,]+)', 1.0),
+            (r'US\$\s*([\d,]+)', 1.0),
+            (r'\$\s*([\d,]+)', 1.0),
+        ]
+        for pat, mult in patterns:
+            for m in re.finditer(pat, text, re.IGNORECASE):
+                try:
+                    v = float(m.group(1).replace(',', '')) * mult
+                    if v >= 10_000:
+                        amounts.append(round(v))
+                except ValueError:
+                    pass
+        return amounts
+
+    raw_amounts = sorted(set(_extract_amounts(corpus)), reverse=True)
+    deduped = []
+    for a in raw_amounts:
+        if not deduped or abs(a - deduped[-1]) / max(deduped[-1], 1) > 0.05:
+            deduped.append(a)
+
+    expenditure_usd = None
+    if budget_usd:
+        exp_candidates = [a for a in deduped if a < budget_usd * 1.05 and abs(a - budget_usd) / budget_usd > 0.03]
+        if exp_candidates:
+            expenditure_usd = min(exp_candidates, key=lambda x: abs(x - budget_usd * 0.9))
     else:
-        st.caption("No other users to reset.")
+        if deduped:
+            budget_usd = deduped[0]
+        if len(deduped) >= 2:
+            expenditure_usd = deduped[1]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main app shell
-# ─────────────────────────────────────────────────────────────────────────────
+    util_rate = None
+    util_re = re.compile(
+        r'(\d+(?:\.\d+)?)\s*%\s+(?:of\s+)?(?:budget|funds?|allocation|disburs|utiliz)',
+        re.IGNORECASE)
+    um = util_re.search(corpus)
+    if um:
+        util_rate = float(um.group(1))
+    elif budget_usd and expenditure_usd:
+        util_rate = round(expenditure_usd / budget_usd * 100, 1)
 
-def show_main_app():
-    is_admin = st.session_state.role == "admin"
+    # ── Stakeholders ─────────────────────────────────────────────────────────
+    STAKEHOLDER_TERMS = [
+        ("National Government",  r'\b(?:government|ministry|ministries|national\s+authority)\b'),
+        ("Private Sector",       r'\bprivate\s+sector\b'),
+        ("Enterprises / SMEs",   r'\b(?:enterprise|sme|company|compan|firm|industr)\b'),
+        ("Civil Society / NGOs", r'\b(?:ngo|civil\s+society|association|federation)\b'),
+        ("Local Communities",    r'\b(?:communit|local|rural|village|household)\b'),
+        ("Academic / Research",  r'\b(?:universit|research|academic|institut)\b'),
+        ("International Orgs",   r'\b(?:unep|undp|worldbank|world\s+bank|bilateral)\b'),
+    ]
+    stakeholders = [name for name, pat in STAKEHOLDER_TERMS
+                    if re.search(pat, corpus, re.IGNORECASE)]
 
-    st.markdown(f"""
-    <div class="unido-header">
-      <div>
-        <span class="unido-logo">UNIDO</span>
-        <span class="unido-sub">  |  Evaluation Intelligence Platform  ·  IEU / EIO</span>
-      </div>
-      <div class="user-chip"> {st.session_state.display_name}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── Gender ───────────────────────────────────────────────────────────────
+    gender_count = len(re.findall(r'\b(?:gender|women|female|girl)\b', corpus, re.IGNORECASE))
+    gender_pct = None
+    gp_re = re.compile(r'(\d+(?:\.\d+)?)\s*%\s+(?:women|female|girl)', re.IGNORECASE)
+    gm = gp_re.search(corpus)
+    if gm:
+        gender_pct = float(gm.group(1))
 
-    # ── Sidebar ─────────────────────────────────────────────────────────────────────────
-    with st.sidebar:
-        st.markdown(f"**{st.session_state.display_name}**")
-        st.caption(f"@{st.session_state.username} · {st.session_state.role.title()}")
-        if st.button("Sign out", use_container_width=True):
-            do_logout()
-        st.divider()
+    if gender_count >= 10:
+        gender_rating = "Mainstreamed"
+        gender_color  = "#2f7a6f"
+    elif gender_count >= 3:
+        gender_rating = "Partially Mainstreamed"
+        gender_color  = "#c08a34"
+    else:
+        gender_rating = "Not Mainstreamed"
+        gender_color  = "#a3492f"
 
-        st.markdown("### Filters")
-        with st.form(key="filter_form"):
-            with st.expander("Thematic Area", expanded=False):
-                thematic_sel = st.multiselect("Thematic", THEMATIC_AREAS,
-                                              label_visibility="collapsed", key="f_thematic")
-            with st.expander("SDGs", expanded=False):
-                sdg_sel_nums = []
-                for row_start in range(1, 18, 3):
-                    row_sdgs = list(range(row_start, min(row_start + 3, 18)))
-                    cols = st.columns(3)
-                    for i, n in enumerate(row_sdgs):
-                        with cols[i]:
-                            if n in _SDG_B64:
-                                st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">'
-                                    f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
-                                    f'title="SDG {n}: {SDG_NAMES[n]}" '
-                                    f'style="width:54px;height:54px;border-radius:6px;'
-                                    f'object-fit:cover;display:block;margin:0 auto;" /></div>',
-                                    unsafe_allow_html=True,
-                                )
-                            else:
-                                color = SDG_COLORS[n]
-                                name_short = SDG_NAMES[n].split()[0]
-                                st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">'
-                                    f'<div style="display:inline-flex;flex-direction:column;'
-                                    f'align-items:center;justify-content:center;'
-                                    f'width:54px;height:54px;background:{color};color:white;'
-                                    f'font-weight:800;border-radius:6px;font-size:16px;'
-                                    f'font-family:Arial,sans-serif;" '
-                                    f'title="SDG {n}: {SDG_NAMES[n]}">'
-                                    f'<span style="font-size:18px;line-height:1;">{n}</span>'
-                                    f'<span style="font-size:7px;font-weight:600;opacity:0.9;">'
-                                    f'{name_short[:6].upper()}</span>'
-                                    f'</div></div>',
-                                    unsafe_allow_html=True,
-                                )
-                            checked = st.checkbox(
-                                SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
-                                label_visibility="collapsed",
-                            )
-                            if checked:
-                                sdg_sel_nums.append(n)
-                if sdg_sel_nums:
-                    badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
-                    st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
-            with st.expander("Year", expanded=False):
-                yr_sel = st.selectbox(
-                    "Year",
-                    ["All years", 2025, 2024, 2023, 2022, 2021],
-                    label_visibility="collapsed", key="f_year",
-                )
-            with st.expander("Evaluation Type", expanded=False):
-                eval_type_sel = st.multiselect(
-                    "Type",
-                    ["Project Evaluation", "Strategic Evaluation", "Country Evaluation",
-                     "Synthesis", "Reference Document"],
-                    label_visibility="collapsed", key="f_eval_type",
-                )
-            with st.expander("Region", expanded=False):
-                region_sel = st.multiselect(
-                    "Region",
-                    ["Africa", "Asia", "Europe", "Latin America", "Middle East", "Global"],
-                    label_visibility="collapsed", key="f_region",
-                )
-            st.form_submit_button("Search", use_container_width=True, type="primary")
+    gender_note = None
+    for sent in re.split(r'(?<=[.!?])\s+', corpus):
+        if re.search(r'\b(?:gender|women|female)\b', sent, re.IGNORECASE) and 30 < len(sent) < 300:
+            gender_note = sent.strip()
+            break
 
-        filters = {
-            "thematic":   thematic_sel,
-            "sdgs":       sdg_sel_nums,
-            "eval_type":  eval_type_sel,
-            "region":     region_sel,
-            "years":      [yr_sel] if yr_sel != "All years" else [],
-            "year_min":   yr_sel if yr_sel != "All years" else None,
-            "year_max":   yr_sel if yr_sel != "All years" else None,
-            "dac":        [],
-        }
+    # ── Delay causes ─────────────────────────────────────────────────────────
+    delay_causes = []
+    for sent in re.split(r'(?<=[.!?])\s+', corpus):
+        if re.search(r'\b(?:delay|extend|postpone|behind\s+schedule|covid|pandemic)\b',
+                     sent, re.IGNORECASE):
+            s = sent.strip()
+            if 20 < len(s) < 200 and s not in delay_causes:
+                delay_causes.append(s)
+    delay_causes = delay_causes[:3]
 
-        st.divider()
-        st.markdown("### System")
-        if st.button("Health check", use_container_width=True):
-            try:
-                rh = httpx.get(f"{BACKEND_URL}/api/v1/health", timeout=8)
-                st.session_state.backend_healthy = rh.json()
-            except Exception as e:
-                st.session_state.backend_healthy = {"error": str(e)}
-        if st.session_state.backend_healthy:
-            h = st.session_state.backend_healthy
-            if "error" in h:
-                st.markdown('<span class="dot dot-red"></span> Unreachable',
-                            unsafe_allow_html=True)
-            else:
-                cls = "dot-green" if h.get("status") == "healthy" else "dot-amber"
-                st.markdown(f'<span class="dot {cls}"></span> {h.get("status","").title()}',
-                            unsafe_allow_html=True)
-                qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
-                st.markdown(f'<span class="dot {qcls}"></span> Qdrant ' +
-                            f'{"" if h.get("qdrant_connected") else ""}',
-                            unsafe_allow_html=True)
-                if h.get("document_count", 0):
-                    st.caption(f"{h['document_count']:,} chunks indexed")
+    return {
+        "rid": rid, "title": title, "year": year,
+        "country": country, "region": region,
+        "report_type": rtype, "thematic": thematic,
+        "donor": donor, "project_id": project_id,
+        "budget_usd": budget_usd, "expenditure_usd": expenditure_usd,
+        "util_rate": util_rate,
+        "planned_months": planned_months, "actual_months": actual_months,
+        "start_year": start_year, "end_year": end_year,
+        "planned_end_year": planned_end_year, "actual_end_year": actual_end_year,
+        "has_delay": has_delay, "delay_months": delay_months,
+        "delay_causes": delay_causes,
+        "stakeholders": stakeholders,
+        "gender_rating": gender_rating, "gender_color": gender_color,
+        "gender_count": gender_count, "gender_pct": gender_pct,
+        "gender_note": gender_note,
+    }
 
-    # ── Tabs ──────────────────────────────────────────────────────────────────────────────
-    tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
-    if is_admin:
-        tab_names.append("Admin")
 
-    tabs = st.tabs(tab_names)
+def _render_infographic_html(d: dict) -> str:
+    """Render the professional 5-section A4 infographic HTML from a parsed data dict."""
+    import json as _json
 
-    with tabs[0]:
-        show_search_tab(filters)
-    with tabs[1]:
-        show_synthesis_tab(filters)
-    with tabs[2]:
-        show_visualize_tab()
-    with tabs[3]:
-        show_dac_tab()
-    if is_admin:
-        with tabs[4]:
-            show_admin_tab()
+    def _esc(s):
+        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    st.divider()
-    st.markdown(
-        "<p style='text-align:center;color:#9ca3af;font-size:.72rem;'>"
-        "UNIDO IEU Evaluation Intelligence Platform · Internal use only · "
-        "Retrieved passages should be verified against source documents before formal citation."
-        "</p>",
-        unsafe_allow_html=True,
-    )
+    def _fmt_budget(v):
+        if v is None: return "N/A"
+        if v >= 1_000_000: return f"USD {v/1_000_000:.2f}M"
+        if v >= 1_000:     return f"USD {v/1_000:.0f}K"
+        return f"USD {v:.0f}"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Router
-# ─────────────────────────────────────────────────────────────────────────────
+    def _fmt_dur(m):
+        if m is None: return "N/A"
+        yrs, mos = divmod(int(m), 12)
+        if mos == 0: return f"{yrs} yr{'s' if yrs != 1 else ''}"
+        if yrs == 0: return f"{mos} mo"
+        return f"{yrs} yr{'s' if yrs != 1 else ''} {mos} mo"
 
-if not st.session_state.session_token:
-    show_login_page()
-else:
-    show_main_app()
+    # ── Section 1: At a Glance KPI cards ────────────────────────────────────
+    overrun_str   = "On Schedule"
+    overrun_color = "#2f7a6f"
+    if d.get("has_delay"):
+        overrun_str   = f"+{_fmt_dur(d['delay_months'])}"
+        overrun_color = "#a3492f"
+
+    kpi_cards = [
+        ("Country",       _esc(d.get("country") or "—"),                             "#173a58"),
+        ("Thematic Area", _esc((d.get("thematic") or "—")[:28]),                     "#173a58"),
+        ("Eval. Type",    _esc((d.get("report_type") or "—")[:24]),                  "#173a58"),
+        ("Eval. Year",    _esc(str(d.get("year") or "—")),                           "#173a58"),
+        ("Budget",        _esc(_fmt_budget(d.get("budget_usd"))),                    "#0d2436"),
+        ("Duration",      _esc(_fmt_dur(d.get("actual_months") or d.get("planned_months"))), "#0d2436"),
+        ("Overrun",       _esc(overrun_str),                                         overrun_color),
+    ]
+    kpi_html = "".join(f"""
+        <div class="kpi-card" style="border-top:3px solid {color};">
+          <div class="kpi-label">{label}</div>
+          <div class="kpi-value" style="color:{color};">{value}</div>
+        </div>""" for label, value, color in kpi_cards)
+
+    # ── Section 2: Implementation Timeline ──────────────────────────────────
+    sy  = d.get("start_year")
+    pey = d.get("planned_end_year")
+    aey = d.get("actual_end_year")
+
+    if sy and (pey or aey):
+        timeline_end = aey or pey
+        total_span   = max(timeline_end - sy, 1)
+
+        def _tpct(yr):
+            return round((yr - sy) / total_span * 100, 1)
+
+        p_end = pey or aey
+        a_end = aey or pey
+        p_mid_yr = round(sy + (p_end - sy) / 2)
+        a_mid_yr = round(sy + (a_end - sy) / 2)
+
+        def _dot_row(color, label, s_yr, mid_yr, e_yr):
+            s_pct   = 0.0
+            mid_pct = _tpct(mid_yr)
+            e_pct   = _tpct(e_yr)
+            return f"""
+            <div class="tl-row">
+              <div class="tl-label">{_esc(label)}</div>
+              <div class="tl-track">
+                <div class="tl-line" style="background:{color};opacity:0.4;left:{s_pct}%;width:{e_pct - s_pct}%;"></div>
+                <div class="tl-dot" style="left:{s_pct}%;background:{color};">
+                  <div class="tl-year">{s_yr}</div>
+                </div>
+                <div class="tl-dot tl-mid" style="left:{mid_pct}%;background:{color};">
+                  <div class="tl-year">{mid_yr}</div>
+                </div>
+                <div class="tl-dot tl-end" style="left:{e_pct}%;background:{color};">
+                  <div class="tl-year" style="font-weight:800;">{e_yr}</div>
+                </div>
+              </div>
+            </div>"""
+
+        timeline_html = f"""
+        <div class="tl-container">
+          {_dot_row("#6b7280", "Planned", sy, p_mid_yr, p_end)}
+          {_dot_row("#c08a34", "Actual",  sy, a_mid_yr, a_end)}
+        </div>
+        <div class="tl-legend">
+          <span class="tl-leg-item"><span class="tl-leg-dot" style="background:#6b7280;"></span>Planned</span>
+          <span class="tl-leg-item"><span class="tl-leg-dot" style="background:#c08a34;"></span>Actual</span>
+        </div>"""
+    else:
+        timeline_html = '<p class="no-data">Timeline data not available in this report.</p>'
+
+    # ── Section 3: Delays in the Project ────────────────────────────────────
+    delay_html = ""
+    if d.get("has_delay") and d.get("planned_months") and d.get("actual_months"):
+        pm = d["planned_months"]
+        am = d["actual_months"]
+        p_pct  = round(pm / am * 100, 1)
+        ov_pct = round((am - pm) / am * 100, 1)
+
+        causes_html = ""
+        if d.get("delay_causes"):
+            items = "".join(f"<li>{_esc(c)}</li>" for c in d["delay_causes"])
+            causes_html = f"""
+            <div class="delay-causes">
+              <div class="delay-causes-label">Documented Delay Causes</div>
+              <ul>{items}</ul>
+            </div>"""
+
+        delay_html = f"""
+        <div class="gantt-container">
+          <div class="gantt-row">
+            <div class="gantt-label">Planned</div>
+            <div class="gantt-track">
+              <div class="gantt-bar" style="width:{p_pct}%;background:#8da4b8;border-radius:3px;"></div>
+              <span class="gantt-dur">{_fmt_dur(pm)}</span>
+            </div>
+          </div>
+          <div class="gantt-row">
+            <div class="gantt-label">Actual<
