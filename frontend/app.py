@@ -1864,7 +1864,7 @@ def show_synthesis_tab(filters: dict):
 
                     _client = _anthropic.Anthropic(api_key=_api_key)
                     msg = _client.messages.create(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-5",
                         max_tokens=2048,
                         system=system_prompt,
                         messages=[{"role": "user", "content": f"EVALUATION REPORTS:\n\n{context_text}\n\nQUESTION: {query.strip()}"}]
