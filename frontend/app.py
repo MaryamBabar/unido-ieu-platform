@@ -3148,7 +3148,7 @@ def _render_infographic_html(d: dict) -> str:
     else:
         financial_js_block = ""
 
-        return f"""<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
