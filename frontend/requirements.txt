@@ -8,3 +8,4 @@ PyYAML
 pandas
 openpyxl
 plotly
+anthropic

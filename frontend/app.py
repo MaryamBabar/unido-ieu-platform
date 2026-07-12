@@ -1811,29 +1811,73 @@ def show_synthesis_tab(filters: dict):
                 st.rerun()
 
         if send and query.strip():
-            payload = {
-                "query": query.strip(),
-                "report_ids": selected_ids,
-            }
             with st.spinner("Claude is synthesising across selected reports…"):
                 try:
-                    r = api("POST", "/api/v1/synthesize", json=payload)
-                    if r.status_code == 200:
-                        data = r.json()
-                        st.session_state.synth_history.append({
-                            "query":  query.strip(),
-                            "answer": data.get("answer", ""),
-                            "report_count": data.get("report_count", 0),
-                        })
-                        st.rerun()
-                    elif r.status_code == 503:
-                        st.warning("AI synthesis unavailable — ANTHROPIC_API_KEY not set in backend.", icon="⚠️")
-                    else:
-                        st.error(f"Backend error {r.status_code}: {r.text[:200]}")
-                except httpx.ConnectError:
-                    st.error(f"Cannot reach backend at {BACKEND_URL}.")
+                    import anthropic as _anthropic
+
+                    try:
+                        _api_key = st.secrets["ANTHROPIC_API_KEY"]
+                    except Exception:
+                        _api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+                    if not _api_key:
+                        st.warning("Add ANTHROPIC_API_KEY to Streamlit secrets to enable synthesis.", icon="⚠️")
+                        st.stop()
+
+                    # Load sections locally — no backend needed
+                    context_blocks = []
+                    for rid in selected_ids:
+                        sec   = _load_sections_local(rid)
+                        secs  = sec.get("sections", {})
+                        meta  = sec.get("metadata", {})
+                        ai_d  = _load_ai_extraction(rid)
+                        title   = meta.get("title") or ai_d.get("context", {}).get("title", rid)
+                        year    = meta.get("year") or ai_d.get("context", {}).get("year", "")
+                        country = meta.get("country") or ai_d.get("context", {}).get("country", "")
+                        block = (
+                            f"=== REPORT: {title} ===\n"
+                            f"Year: {year} | Country: {country}\n\n"
+                            f"FINDINGS / RESULTS:\n{(secs.get('findings') or secs.get('results') or 'Not available')[:1500]}\n\n"
+                            f"CONCLUSIONS:\n{secs.get('conclusions', 'Not available')[:1500]}\n\n"
+                            f"LESSONS LEARNED:\n{secs.get('lessons_learned', 'Not available')[:1500]}\n\n"
+                            f"RECOMMENDATIONS:\n{secs.get('recommendations', 'Not available')[:1500]}\n"
+                        )
+                        context_blocks.append(block)
+
+                    n = len(context_blocks)
+                    context_text = "\n\n".join(context_blocks)
+
+                    system_prompt = (
+                        f"You are a senior evaluation synthesis analyst at UNIDO's Independent Evaluation Unit (IEU). "
+                        f"You have deep expertise in development effectiveness, OECD-DAC criteria, clean energy, and climate action evaluation.\n\n"
+                        f"You have been provided with {n} UNIDO evaluation report(s). "
+                        f"Synthesise findings ACROSS all reports — analytical, evidence-based, and genuinely useful.\n\n"
+                        f"RULES:\n"
+                        f"1. Synthesise ACROSS reports — identify patterns, tensions, and cross-cutting themes\n"
+                        f"2. Use precise language: 'in 3 of 4 reports', 'the majority of reports'\n"
+                        f"3. Cite specific report titles when making factual claims\n"
+                        f"4. Draw non-obvious analytical conclusions\n"
+                        f"5. Never invent information not in the provided reports\n"
+                        f"6. End EVERY response with a ## Key Findings section with 3–5 bullet points\n\n"
+                        f"TONE: Senior UN evaluation expert writing for a peer audience. Direct, analytical, clear."
+                    )
+
+                    _client = _anthropic.Anthropic(api_key=_api_key)
+                    msg = _client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=2048,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": f"EVALUATION REPORTS:\n\n{context_text}\n\nQUESTION: {query.strip()}"}]
+                    )
+                    answer = msg.content[0].text if msg.content else ""
+                    st.session_state.synth_history.append({
+                        "query": query.strip(),
+                        "answer": answer,
+                        "report_count": n,
+                    })
+                    st.rerun()
                 except Exception as e:
-                    st.error(str(e))
+                    st.error(f"Synthesis error: {e}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 3 — Visualize
