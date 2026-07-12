@@ -1157,8 +1157,8 @@ def _report_detail_modal():
     sections = sec_data.get("sections", {}) if sec_data else {}
     colors   = _section_colors()
 
-    t_ov, t_ll, t_rec, t_sdg, t_theme, t_ctx = st.tabs(
-        ["Overview", "Lessons Learned", "Recommendations", "SDG Mapping", "Thematic Area", "Context"]
+    t_ov, t_find, t_conc, t_ll, t_rec, t_sdg, t_theme, t_ctx = st.tabs(
+        ["Overview", "Findings", "Conclusions", "Lessons Learned", "Recommendations", "SDG Mapping", "Thematic Area", "Context"]
     )
 
     with t_ov:
@@ -1201,11 +1201,47 @@ def _report_detail_modal():
                 unsafe_allow_html=True,
             )
 
+
+    with t_find:
+        find_text = sections.get("findings", "")
+        if find_text and find_text.strip():
+            st.markdown(
+                '<div style="font-size:0.75rem;color:#1d4ed8;font-weight:700;'
+                'letter-spacing:0.06em;margin-bottom:0.6rem;text-transform:uppercase;">📋 Extracted from Report</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div style="background:#eff6ff;border-left:4px solid #1d4ed8;'
+                f'border-radius:0 8px 8px 0;padding:0.85rem 1rem;'
+                f'font-size:0.86rem;line-height:1.7;color:#1e293b;white-space:pre-wrap;">'
+                f'{find_text.strip()[:4000]}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("Findings not yet extracted for this report.", icon="ℹ️")
+
+    with t_conc:
+        conc_text = sections.get("conclusions", "")
+        if conc_text and conc_text.strip():
+            st.markdown(
+                '<div style="font-size:0.75rem;color:#166534;font-weight:700;'
+                'letter-spacing:0.06em;margin-bottom:0.6rem;text-transform:uppercase;">📋 Extracted from Report</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div style="background:#f0fdf4;border-left:4px solid #166534;'
+                f'border-radius:0 8px 8px 0;padding:0.85rem 1rem;'
+                f'font-size:0.86rem;line-height:1.7;color:#1e293b;white-space:pre-wrap;">'
+                f'{conc_text.strip()[:4000]}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("Conclusions not yet extracted for this report.", icon="ℹ️")
+
     with t_ll:
         # Priority: JSON file extraction → PILOT_METADATA fallback → Qdrant sections
         ai_lessons = ai.get("lessons_learned", []) or PILOT_METADATA.get(rid, {}).get("lessons_learned", [])
         if ai_lessons:
-            st.markdown('<div style="font-size:0.7rem;color:#0369a1;font-weight:700;letter-spacing:0.06em;margin-bottom:0.6rem;">✨ AI EXTRACTED</div>', unsafe_allow_html=True)
             for i, lesson in enumerate(ai_lessons, 1):
                 st.markdown(
                     f'<div style="background:#e0f2fe;border-left:3px solid #0369a1;'
@@ -1222,7 +1258,6 @@ def _report_detail_modal():
         # Priority: JSON file extraction → PILOT_METADATA fallback → Qdrant sections
         ai_recs = ai.get("recommendations", []) or PILOT_METADATA.get(rid, {}).get("recommendations", [])
         if ai_recs:
-            st.markdown('<div style="font-size:0.7rem;color:#9a3412;font-weight:700;letter-spacing:0.06em;margin-bottom:0.6rem;">✨ AI EXTRACTED</div>', unsafe_allow_html=True)
             for i, rec in enumerate(ai_recs, 1):
                 st.markdown(
                     f'<div style="background:#fff7ed;border-left:3px solid #ea580c;'
@@ -1695,30 +1730,36 @@ def show_synthesis_tab(filters: dict):
 
         # Show history
         for item in st.session_state.synth_history:
-            st.markdown(f"**Q:** *{item['query']}*")
-            for p in item.get("passages", []):
-                score = p.get("reranker_score", 0)
-                st.markdown(f"""
-                <div class="passage-card">
-                  <div class="passage-title">
-                    {p.get("report_title","")}
-                    <span class="score-pill">relevance {score:.2f}</span>
-                  </div>
-                  <div class="passage-meta">
-                    {p.get("year","")} · {p.get("country","")}
-                    &nbsp;·&nbsp; Section: {p.get("section_type","").replace("_"," ").title()}
-                  </div>
-                  <div class="passage-text">{p.get("chunk_text","")[:500]}…</div>
-                </div>
-                """, unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="background:#f0f4ff;border-left:3px solid #003da5;'
+                f'padding:0.5rem 0.8rem;border-radius:0 6px 6px 0;'
+                f'font-size:0.85rem;font-weight:600;color:#003da5;margin-bottom:0.5rem;">'
+                f'❓ {item["query"]}</div>',
+                unsafe_allow_html=True,
+            )
+            answer = item.get("answer", "")
+            n_rep  = item.get("report_count", 0)
+            if answer:
+                import re as _re
+                # Render markdown answer
+                st.markdown(
+                    f'<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;'
+                    f'padding:1rem 1.2rem;margin-bottom:0.3rem;font-size:0.87rem;line-height:1.7;">',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(answer)
+                st.markdown('</div>', unsafe_allow_html=True)
+                st.caption(f"Synthesised across {n_rep} report(s) · Powered by Claude")
             st.divider()
 
         # Example chips
         examples = [
-            "What lessons emerge on stakeholder engagement?",
-            "What sustainability challenges were identified?",
-            "How is gender mainstreaming assessed?",
-            "What recommendations relate to project design?",
+            "What are the key lessons learned across these reports?",
+            "What common recommendations emerge on project sustainability?",
+            "What findings relate to clean energy effectiveness?",
+            "How do these projects address gender mainstreaming?",
+            "What conclusions were drawn about stakeholder engagement?",
+            "Compare the key findings across all selected reports.",
         ]
         st.markdown("**Example queries:**")
         ex_cols = st.columns(2)
@@ -1745,40 +1786,29 @@ def show_synthesis_tab(filters: dict):
                 st.rerun()
 
         if send and query.strip():
-            # Build thematic filter if set
             payload = {
                 "query": query.strip(),
-                "filters": {
-                    "dac_criteria":       filters.get("dac", []),
-                    "sdgs":               filters.get("sdgs", []),
-                    "thematic_categories": filters.get("thematic", []),
-                    "year_min":            filters.get("year_min"),
-                    "year_max":            filters.get("year_max"),
-                },
+                "report_ids": selected_ids,
             }
-            with st.spinner("Searching portfolio…"):
+            with st.spinner("Claude is synthesising across selected reports…"):
                 try:
-                    r = api("POST", "/api/v1/query", json=payload)
+                    r = api("POST", "/api/v1/synthesize", json=payload)
                     if r.status_code == 200:
                         data = r.json()
-                        passages = data.get("passages", [])
                         st.session_state.synth_history.append({
-                            "query":   query.strip(),
-                            "passages": passages,
+                            "query":  query.strip(),
+                            "answer": data.get("answer", ""),
+                            "report_count": data.get("report_count", 0),
                         })
                         st.rerun()
+                    elif r.status_code == 503:
+                        st.warning("AI synthesis unavailable — ANTHROPIC_API_KEY not set in backend.", icon="⚠️")
                     else:
-                        st.error(f"Backend error {r.status_code}")
+                        st.error(f"Backend error {r.status_code}: {r.text[:200]}")
                 except httpx.ConnectError:
                     st.error(f"Cannot reach backend at {BACKEND_URL}.")
                 except Exception as e:
                     st.error(str(e))
-
-        st.info(
-            "**AI Synthesis** (generates a written answer across reports) can be enabled "
-            "by adding your Anthropic API key to `.env`. Currently showing raw retrieved passages.",
-            icon="ℹ️",
-        )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 3 — Visualize

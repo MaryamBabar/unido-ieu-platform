@@ -40,6 +40,9 @@ class Config:
     RERANK_TOP_N: int = int(os.getenv("RERANK_TOP_N", "10"))
     RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
 
+    # ── Anthropic ─────────────────────────────────────────────────────────────
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+
     # ── FastAPI ───────────────────────────────────────────────────────────────
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))

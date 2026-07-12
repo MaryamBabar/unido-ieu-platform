@@ -482,6 +482,106 @@ async def get_bulk_sections(
     return {"reports": results, "total": len(results)}
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI Synthesis endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SynthesizeRequest(BaseModel):
+    query: str
+    report_ids: list[str] = []
+
+@app.post("/api/v1/synthesize")
+async def synthesize(request: SynthesizeRequest, session: dict = Depends(require_auth)):
+    """
+    Cross-report AI synthesis: loads extracted sections for each report,
+    feeds them to Claude, returns a written analytical answer.
+    """
+    if not config.ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured.")
+
+    import anthropic
+    import os, glob
+
+    sections_dir = os.path.join(os.path.dirname(__file__), "..", "data", "extracted_sections")
+
+    # Load sections for each requested report
+    rid_list = request.report_ids
+    if not rid_list:
+        # default to all available
+        paths = sorted(glob.glob(os.path.join(sections_dir, "*.json")))
+        rid_list = [os.path.basename(p).replace(".json", "") for p in paths]
+
+    context_blocks = []
+    for rid in rid_list:
+        path = os.path.join(sections_dir, f"{rid}.json")
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        meta = data.get("metadata", {})
+        secs = data.get("sections", {})
+        title = meta.get("title", rid)
+        year  = meta.get("year", "")
+        country = meta.get("country", "")
+
+        block = f"""=== REPORT: {title} ===
+Year: {year} | Country: {country}
+
+FINDINGS:
+{secs.get("findings", "Not available")[:1500]}
+
+CONCLUSIONS:
+{secs.get("conclusions", "Not available")[:1500]}
+
+LESSONS LEARNED:
+{secs.get("lessons_learned", "Not available")[:1500]}
+
+RECOMMENDATIONS:
+{secs.get("recommendations", "Not available")[:1500]}
+"""
+        context_blocks.append(block)
+
+    if not context_blocks:
+        raise HTTPException(status_code=404, detail="No report sections found for the given IDs.")
+
+    context_text = "\n\n".join(context_blocks)
+    n = len(context_blocks)
+
+    system_prompt = f"""You are a senior evaluation synthesis analyst at UNIDO's Independent Evaluation Unit (IEU). You have deep expertise in development effectiveness, OECD-DAC criteria, and industrial policy evaluation.
+
+You have been provided with {n} UNIDO evaluation report(s). Your task is to synthesise findings ACROSS all provided reports and deliver a response that is analytical, evidence-based, and genuinely useful for evaluation work.
+
+RULES:
+1. Synthesise ACROSS reports — identify patterns, tensions, and cross-cutting themes
+2. Use precise language: "in 3 of 4 reports", "the majority of reports", "only 1 report found"
+3. Cite specific report titles when making factual claims
+4. Draw non-obvious analytical conclusions — connect the dots
+5. State explicitly when evidence is insufficient to answer confidently
+6. Never invent information not present in the provided reports
+7. End EVERY response with a ## Key Findings section with 3-5 bullet points
+
+TONE: Write as a thoughtful senior UN evaluation expert addressing a peer audience. Be direct, analytical, and clear."""
+
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2048,
+        system=system_prompt,
+        messages=[
+            {"role": "user", "content": f"EVALUATION REPORTS:\n\n{context_text}\n\nQUESTION: {request.query}"}
+        ]
+    )
+
+    answer = message.content[0].text if message.content else ""
+    return {
+        "answer": answer,
+        "reports_used": rid_list,
+        "report_count": n,
+    }
+
 @app.get("/")
 async def root():
     return {"service": "UNIDO IEU RAG Platform", "version": "1.0.0", "docs": "/docs"}
