@@ -2041,7 +2041,7 @@ def show_visualize_tab():
     st.divider()
 
     # ── Supporting charts ─────────────────────────────────────────────────────
-    with st.expander(" Portfolio Charts", expanded=False):
+    with st.expander("📊 Portfolio Charts", expanded=True):
         col_a, col_b = st.columns(2)
 
         with col_a:
@@ -2113,6 +2113,46 @@ def show_visualize_tab():
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
+        # Ratings + Thematic row
+        col_e, col_f = st.columns(2)
+        with col_e:
+            st.markdown("##### Evaluation Ratings")
+            ratings_data = [(r.get("title","")[:30], r.get("evaluation_rating")) for r in reports if r.get("evaluation_rating")]
+            if ratings_data:
+                titles_r = [x[0] for x in ratings_data]
+                vals_r   = [float(x[1]) for x in ratings_data]
+                colors_r = ["#22c55e" if v >= 4.5 else ("#f59e0b" if v >= 3.0 else "#ef4444") for v in vals_r]
+                fig = go.Figure(go.Bar(
+                    x=titles_r, y=vals_r,
+                    marker_color=colors_r,
+                    text=[f"{v:.1f}" for v in vals_r], textposition="outside",
+                ))
+                fig.update_layout(
+                    margin=dict(t=10,b=40,l=10,r=10), height=320,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(title="Rating (1–6)", range=[0, 6.5]),
+                    xaxis=dict(tickangle=-20),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        with col_f:
+            st.markdown("##### SDG Alignment by Report")
+            if reports:
+                rep_names = [r.get("title","")[:25] for r in reports]
+                sdg_counts_per_rep = [len(r.get("sdgs") or []) for r in reports]
+                fig = go.Figure(go.Bar(
+                    x=rep_names, y=sdg_counts_per_rep,
+                    marker_color="#009EDB",
+                    text=sdg_counts_per_rep, textposition="outside",
+                ))
+                fig.update_layout(
+                    margin=dict(t=10,b=40,l=10,r=10), height=320,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(title="Number of SDGs"),
+                    xaxis=dict(tickangle=-20),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 4 — OECD-DAC Analysis
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2128,9 +2168,9 @@ def show_dac_tab():
         return
 
     st.markdown(
-        "Cross-portfolio analysis across the 5 OECD-DAC criteria — "
-        "Relevance, Effectiveness, Efficiency, Impact, Sustainability. "
-        "Click any criterion to browse verbatim evidence passages from the underlying reports."
+        "Cross-portfolio analysis across the 5 OECD-DAC evaluation criteria. "
+        "Select reports to compare their evidence coverage and browse verbatim passages "
+        "across Relevance, Effectiveness, Efficiency, Impact, and Sustainability."
     )
 
     col_left, col_right = st.columns([3, 7])
@@ -2211,6 +2251,48 @@ def show_dac_tab():
                 paper_bgcolor="rgba(0,0,0,0)",
             )
             st.plotly_chart(fig_radar, use_container_width=True)
+
+            # ── AI Summary per criterion ──────────────────────────────────
+            st.markdown("#### AI Summary by Criterion")
+            if st.button("✨ Generate AI Summary across criteria", type="primary", use_container_width=True, key="dac_ai_btn"):
+                dac_rids = st.session_state.get("dac_report_ids", [])
+                with st.spinner("Claude is analysing DAC evidence across selected reports…"):
+                    try:
+                        # Build context from evidence passages
+                        ev = evidence
+                        context_lines = []
+                        for crit, label in zip(DAC_CRITERIA, DAC_LABELS):
+                            passages = ev.get(crit, [])[:5]
+                            if passages:
+                                context_lines.append(f"\n### {label.upper()}\n")
+                                for p in passages:
+                                    context_lines.append(f"[{p.get('report_title','')}]: {p.get('text','')[:400]}")
+                        context_text = "\n".join(context_lines)
+                        payload = {
+                            "query": f"Provide a concise analytical summary of the evaluation evidence for each of the 5 OECD-DAC criteria: Relevance, Effectiveness, Efficiency, Impact, and Sustainability. For each criterion, identify the key patterns and cross-cutting findings across the selected reports. Use the evidence provided.\n\nEVIDENCE:\n{context_text}",
+                            "report_ids": dac_rids,
+                        }
+                        r_ai = api("POST", "/api/v1/synthesize", json=payload)
+                        if r_ai.status_code == 200:
+                            st.session_state["dac_ai_summary"] = r_ai.json().get("answer", "")
+                        else:
+                            st.error(f"AI summary failed: {r_ai.status_code}")
+                    except Exception as e:
+                        st.error(str(e))
+
+            if st.session_state.get("dac_ai_summary"):
+                st.markdown(
+                    '<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;' +
+                    'padding:1rem 1.2rem;margin:0.5rem 0 1rem;font-size:0.87rem;line-height:1.7;">',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(st.session_state["dac_ai_summary"])
+                st.markdown('</div>', unsafe_allow_html=True)
+                if st.button("Clear summary", key="dac_clear_sum"):
+                    del st.session_state["dac_ai_summary"]
+                    st.rerun()
+
+            st.divider()
 
             # ── Evidence browser ───────────────────────────────────────────
             st.markdown("#### Evidence Browser")
