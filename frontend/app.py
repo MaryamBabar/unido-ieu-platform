@@ -1226,22 +1226,24 @@ def _report_detail_modal():
 
 
     with t_find:
-        find_text = sections.get("findings", "")
+        find_text = sections.get("findings", "") or sections.get("results", "")
+        section_label = "Key Findings" if sections.get("findings") else ("Results" if sections.get("results") else "")
         if find_text and find_text.strip():
             st.markdown(
-                '<div style="font-size:0.75rem;color:#1d4ed8;font-weight:700;'
-                'letter-spacing:0.06em;margin-bottom:0.6rem;text-transform:uppercase;">📋 Extracted from Report</div>',
+                f'<div style="font-size:0.75rem;color:#1d4ed8;font-weight:700;'
+                f'letter-spacing:0.06em;margin-bottom:0.6rem;text-transform:uppercase;">'
+                f'📋 {section_label} — Extracted from Report</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
                 f'<div style="background:#eff6ff;border-left:4px solid #1d4ed8;'
                 f'border-radius:0 8px 8px 0;padding:0.85rem 1rem;'
                 f'font-size:0.86rem;line-height:1.7;color:#1e293b;white-space:pre-wrap;">'
-                f'{find_text.strip()[:4000]}</div>',
+                f'{find_text.strip()[:8000]}</div>',
                 unsafe_allow_html=True,
             )
         else:
-            st.info("Findings not yet extracted for this report.", icon="ℹ️")
+            st.info("This report does not contain a dedicated Findings or Results section.", icon="ℹ️")
 
     with t_conc:
         conc_text = sections.get("conclusions", "")
@@ -1255,7 +1257,7 @@ def _report_detail_modal():
                 f'<div style="background:#f0fdf4;border-left:4px solid #166534;'
                 f'border-radius:0 8px 8px 0;padding:0.85rem 1rem;'
                 f'font-size:0.86rem;line-height:1.7;color:#1e293b;white-space:pre-wrap;">'
-                f'{conc_text.strip()[:4000]}</div>',
+                f'{conc_text.strip()[:8000]}</div>',
                 unsafe_allow_html=True,
             )
         else:
@@ -1505,8 +1507,8 @@ def _render_section_block(label: str, text: str, color: str, bg: str):
         )
         return
     display_text = text.strip()
-    if len(display_text) > 3000:
-        display_text = display_text[:3000] + "\n\n[… truncated — download Excel for full text]"
+    if len(display_text) > 8000:
+        display_text = display_text[:8000] + "\n\n[… truncated — download Excel for full text]"
     st.markdown(
         f'<div style="background:{bg};border-left:4px solid {color};' +
         f'border-radius:0 8px 8px 0;padding:0.85rem 1rem;margin-top:0.3rem;">' +
