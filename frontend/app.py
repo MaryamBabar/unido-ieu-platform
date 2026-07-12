@@ -532,6 +532,10 @@ st.markdown("""
     --danger: #ef4444; --success: #22c55e; --amber: #f59e0b;
   }
   #MainMenu, footer, header { visibility: hidden; }
+  /* Force sidebar always visible */
+  section[data-testid="stSidebar"] { display: flex !important; visibility: visible !important; width: 21rem !important; min-width: 21rem !important; }
+  section[data-testid="stSidebar"] > div { width: 21rem !important; }
+  button[data-testid="collapsedControl"] { display: none !important; }
   .main .block-container {
     padding-top: 1rem; padding-bottom: 2rem;
     max-width: 100% !important; padding-left: 1.5rem; padding-right: 1.5rem;
