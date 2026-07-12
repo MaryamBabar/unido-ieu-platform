@@ -2632,6 +2632,11 @@ def _extract_rich_infographic_data(rid: str) -> dict:
     """Extract rich infographic fields directly from the PDF. Cached in ai_extractions JSON."""
     import re as _re, json as _json, os as _os
 
+    # Guard: pdfplumber segfaults on Streamlit Cloud — skip entirely there.
+    # PILOT_METADATA already covers all 4 demo reports; corpus regex handles others.
+    if _os.path.exists('/mount/src'):
+        return {}
+
     ai_path = _os.path.join(_os.path.dirname(__file__), "..", "data",
                             "ai_extractions", f"{rid}.json")
     cached_ai = {}
@@ -2646,11 +2651,6 @@ def _extract_rich_infographic_data(rid: str) -> dict:
 
     pdf_path = _find_pdf_path(rid)
     if not pdf_path:
-        return {}
-
-    # Skip pdfplumber on Streamlit Cloud — segfaults due to memory limits.
-    _is_cloud = _os.path.exists('/mount/src') or _os.environ.get('STREAMLIT_SHARING_MODE') == 'streamlit'
-    if _is_cloud:
         return {}
 
     try:
