@@ -2597,39 +2597,103 @@ def _extract_rich_infographic_data(rid: str) -> dict:
                 yr: round(am) for yr, am in zip(raw_years, amounts) if am > 0
             }
 
-    # Stakeholder gender table
-    gs = _re.search(
-        r'Gender\s+analysis.{0,300}?% of women employed(.*?)(?:\n\n|\Z)',
-        full_text, _re.IGNORECASE | _re.DOTALL)
-    if gs:
-        non_empty = [l.strip() for l in gs.group(1).split('\n') if l.strip()]
-        stakeholders_rich = []
+    # ── Stakeholder gender table ─────────────────────────────────────────────
+    # Looks for a table like: Name | Total employees | Female | % women
+    # Appears in UNIDO TEs under "Gender analysis" or "Table X: Gender"
+    stakeholders_rich = []
+    _ROLE_HINTS = [
+        (r'national\s+(?:implement|coordinat|partner|focal)',   "National implementing partner"),
+        (r'implement.*?partner',                                "Implementing partner"),
+        (r'refriger|RAC|air.?condit',                          "Enterprise: refrigeration"),
+        (r'foam|PU|polyurethane',                              "Enterprise: foam sector"),
+        (r'chemical|methyl',                                    "Enterprise: chemicals"),
+        (r'training\s+cent',                                    "Training centre"),
+        (r'government|minist|ministry',                         "Government counterpart"),
+        (r'manufactur|convers',                                 "Manufacturing beneficiary"),
+        (r'cleaner\s+product|RECP|NCPC',                       "Cleaner production centre"),
+        (r'enterprise|company|compan',                          "Project enterprise"),
+    ]
+
+    # Strategy 1: Find "% of women employed" table header then parse rows
+    gender_block = None
+    for pat in [
+        r'% of women employed(.*?)(?:\n{3,}|\Z)',
+        r'(?:Gender analysis|Table \d+[.:][^\n]*gender)(.*?)(?:\n{3,}|\Z)',
+        r'(?:gender.{0,60}?mainstreaming|gender.{0,60}?analysis)(.*?)(?:\n{3,}|\Z)',
+    ]:
+        m = _re.search(pat, full_text, _re.IGNORECASE | _re.DOTALL)
+        if m:
+            gender_block = m.group(1)
+            break
+
+    if gender_block:
+        lines = [l.strip() for l in gender_block.split('\n') if l.strip()]
         i = 0
-        while i < len(non_empty) - 3:
-            name = non_empty[i]
-            if (_re.match(r'^\d+$', non_empty[i+1]) and
-                    _re.match(r'^\d+[\s(]', non_empty[i+2])):
-                pct_idx = i + 3
-                if pct_idx < len(non_empty) and _re.match(r'^\d+\.?\d*$', non_empty[pct_idx]):
-                    pct = round(float(non_empty[pct_idx]))
-                    if 0 <= pct <= 100 and len(name) > 2 and not name.isdigit():
-                        stakeholders_rich.append({
-                            "name": name,
-                            "role": "Project stakeholder",
-                            "pct_women": pct
-                        })
-                    i = pct_idx + 1
+        while i < len(lines):
+            name = lines[i]
+            # Skip header-like lines and pure numbers
+            if (len(name) < 3 or name.isdigit() or
+                    _re.match(r'^(name|stakeholder|organisation|total|female|women|%|no\.)', name, _re.I)):
+                i += 1
+                continue
+            # Look ahead for: total_employees female_employees pct
+            # Pattern A: next 3 tokens are numbers (total, female, pct)
+            nums_found = []
+            for j in range(i+1, min(i+6, len(lines))):
+                if _re.match(r'^\d+[\d,.\s\(\)]*$', lines[j]):
+                    nums_found.append((j, float(_re.sub(r'[,\s\(\)]','',lines[j]) or '0')))
+                elif nums_found:
+                    break
+            if len(nums_found) >= 2:
+                # Last number is pct if ≤100, else look for explicit pct
+                vals = [v for _,v in nums_found]
+                pct = None
+                if vals[-1] <= 100:
+                    pct = round(vals[-1])
+                elif len(vals) >= 2 and vals[0] > 0:
+                    pct = round(vals[1] / vals[0] * 100)
+                if pct is not None and 0 <= pct <= 100:
+                    # Guess role from context around name in full text
+                    role = "Project stakeholder"
+                    ctx_snip = full_text[max(0, full_text.find(name)-200):full_text.find(name)+200]
+                    for rpat, rlabel in _ROLE_HINTS:
+                        if _re.search(rpat, ctx_snip, _re.I):
+                            role = rlabel
+                            break
+                    stakeholders_rich.append({"name": name, "role": role, "pct_women": pct})
+                    i = nums_found[-1][0] + 1
                     continue
             i += 1
-        if stakeholders_rich:
-            result["stakeholders_rich"] = stakeholders_rich
 
-    # Delay causes
+    # Strategy 2: inline "X% women" pattern near company names
+    if not stakeholders_rich:
+        for m in _re.finditer(
+            r'([A-Z][A-Za-z0-9\s\./&\-]{2,40})\s*[:\-–]?\s*.*?(\d{1,3})\s*%\s*(?:women|female)',
+            full_text, _re.IGNORECASE
+        ):
+            name = m.group(1).strip()
+            pct  = int(m.group(2))
+            if 0 <= pct <= 100 and len(name) > 3:
+                role = "Project stakeholder"
+                ctx_snip = full_text[max(0,m.start()-150):m.end()+150]
+                for rpat, rlabel in _ROLE_HINTS:
+                    if _re.search(rpat, ctx_snip, _re.I):
+                        role = rlabel
+                        break
+                if not any(s["name"] == name for s in stakeholders_rich):
+                    stakeholders_rich.append({"name": name, "role": role, "pct_women": pct})
+        if len(stakeholders_rich) > 8:
+            stakeholders_rich = stakeholders_rich[:8]
+
+    if stakeholders_rich:
+        result["stakeholders_rich"] = stakeholders_rich
+
+    # ── Delay causes ─────────────────────────────────────────────────────────
     delay_sents = []
     for sent in _re.split(r'(?<=[.!?])\s+', full_text):
         s = sent.strip()
-        if (_re.search(r'\b(?:delay|extend|postpone|behind\s+schedule|covid|pandemic)\b', s, _re.I)
-                and 40 < len(s) < 250 and s not in delay_sents):
+        if (_re.search(r'\b(?:delay|extend|postpone|behind\s+schedule|covid|pandemic|overrun|late)\b',
+                       s, _re.I) and 40 < len(s) < 300 and s not in delay_sents):
             delay_sents.append(s)
         if len(delay_sents) >= 3:
             break
@@ -2990,7 +3054,14 @@ def _render_infographic_html(d: dict) -> str:
     sy=d.get("start_year"); pey=d.get("planned_end_year")
     aey=d.get("actual_end_year"); y=d.get("year")
     if d.get("timeline_events"):
-        tl_events_json = _json.dumps(d["timeline_events"])
+        raw_events = d["timeline_events"]
+        # PILOT_METADATA events have yr/lab/type but no pos — compute pos now
+        if raw_events and "pos" not in raw_events[0]:
+            yrs = [e["yr"] for e in raw_events]
+            tl_min=min(yrs); tl_max=max(yrs); tl_span=max(tl_max-tl_min,1)
+            raw_events = [dict(e, pos=round((e["yr"]-tl_min)/tl_span*92+4,1),
+                               yr=str(e["yr"])) for e in raw_events]
+        tl_events_json = _json.dumps(raw_events)
         has_timeline   = True
     else:
         tl_events_json = "[]"; has_timeline = bool(sy and (pey or aey))
@@ -2999,7 +3070,7 @@ def _render_infographic_html(d: dict) -> str:
             tl_min=min(all_yrs); tl_max=max(all_yrs); tl_span=max(tl_max-tl_min,1)
             def _pos(yr): return round((yr-tl_min)/tl_span*92+4,1)
             events=[]
-            if sy: events.append({"yr":str(sy),"pos":_pos(sy),"lab":"Project Start","type":"actual"})
+            if sy: events.append({"yr":str(sy),"pos":_pos(sy),"lab":"Project Start","type":"plan"})
             if sy and pey and (pey-sy)>1:
                 mid=round(sy+(pey-sy)*0.45)
                 events.append({"yr":str(mid),"pos":_pos(mid),"lab":"Mid-Term Review","type":"actual"})
@@ -3135,9 +3206,17 @@ def _render_infographic_html(d: dict) -> str:
     budget_disp=f"{_fmt_usd(bv)} ({_esc(donor)})" if donor and bv else _fmt_usd(bv)
     causes_html=""
     if has_gantt and d.get("delay_causes"):
-        items="".join(f"<li>{_esc(c)}</li>" for c in d["delay_causes"])
+        dc = d["delay_causes"]
+        # delay_causes may be a plain string or a list of strings
+        if isinstance(dc, str):
+            dc_items = [s.strip() for s in dc.split(".") if len(s.strip()) > 20]
+            if not dc_items:
+                dc_items = [dc]
+        else:
+            dc_items = list(dc)
+        items="".join(f"<li>{_esc(c)}</li>" for c in dc_items)
         causes_html=(f'<div class="delay-causes"><b style="font-size:10.5px;color:var(--unblue-deep);">'
-                    f'Primary delay drivers</b><ul>{items}</ul></div>')
+                    f'Primary delay driver</b><ul>{items}</ul></div>')
     t_esc=_esc(d.get("title","")); rid_esc=_esc(d.get("rid",""))
     donor_line=("Funded by <b>"+_esc(donor)+"</b>. " if donor else "")+\
                ("Implemented in <b>"+_esc(d.get("country",""))+"</b>." if d.get("country") else "")
