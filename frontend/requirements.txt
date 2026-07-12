@@ -9,3 +9,6 @@ pandas
 openpyxl
 plotly
 anthropic
+pdfplumber
+anthropic
+pdfplumber
