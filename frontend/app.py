@@ -2124,7 +2124,7 @@ def show_visualize_tab():
                 height=220, margin=dict(t=5,b=5,l=5,r=40),
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                 xaxis=dict(range=[0,7], showgrid=True, gridcolor="#f0f0f0",
-                           title="Rating (1–6)", titlefont=dict(size=10)),
+                           title=dict(text="Rating (1–6)", font=dict(size=10))),
                 yaxis=dict(tickfont=dict(size=9)),
                 font=dict(size=10),
             )
