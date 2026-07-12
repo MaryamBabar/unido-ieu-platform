@@ -557,8 +557,26 @@ def load_lessons(report_ids: list[str]) -> list[dict]:
     except Exception:
         return []
 
+def _load_sections_local(report_id: str) -> dict:
+    """Load extracted sections directly from local JSON file (no backend needed).
+    Works on Streamlit Cloud since data/ is in the git repo."""
+    import pathlib
+    p = pathlib.Path(__file__).parent.parent / "data" / "extracted_sections" / f"{report_id}.json"
+    if p.exists():
+        try:
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
 def load_sections(report_id: str) -> dict | None:
-    """Load pre-extracted PDF sections for a single report."""
+    """Load pre-extracted PDF sections — tries local file first, then backend API."""
+    # Try local file first (faster, works on Streamlit Cloud)
+    local = _load_sections_local(report_id)
+    if local:
+        return local
+    # Fallback to backend API
     try:
         r = api("GET", f"/api/v1/reports/{report_id}/sections")
         return r.json() if r.status_code == 200 else None
@@ -1154,7 +1172,12 @@ def _report_detail_modal():
     """, unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    sections = sec_data.get("sections", {}) if sec_data else {}
+    # Load sections from local file first (reliable), fallback to API data
+    _local_data = _load_sections_local(rid)
+    if _local_data.get("sections"):
+        sections = _local_data["sections"]
+    else:
+        sections = sec_data.get("sections", {}) if sec_data else {}
     colors   = _section_colors()
 
     t_ov, t_find, t_conc, t_ll, t_rec, t_sdg, t_theme, t_ctx = st.tabs(
