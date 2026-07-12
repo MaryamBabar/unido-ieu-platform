@@ -164,7 +164,9 @@ PILOT_METADATA: dict[str, dict] = {
         ],
     },
     "UNIDO-100321": {
+        # ── Core metadata ────────────────────────────────────────────────────
         "project_id":          "100321",
+        "gef_id":              "4602",
         "title":               "Independent Terminal Evaluation: Initiation of the HCFC Phase Out in the Republic of Azerbaijan",
         "year":                2021,
         "country":             "Azerbaijan",
@@ -173,9 +175,66 @@ PILOT_METADATA: dict[str, dict] = {
         "secondary_thematic_area": "Climate Action",
         "report_type":         "Project Evaluation",
         "donor":               "GEF",
-        "budget_usd":          9170000,
-        "evaluation_rating":   5.0,
-        "overall_rating_label":"Satisfactory",
+        # ── Financials (GEF grant only, Table 5 of Terminal Evaluation) ──────
+        "budget_usd":          2_620_000,
+        "evaluation_rating":   5.5,
+        "overall_rating_label":"Highly Satisfactory",
+        "util_rate":           99.97,
+        # ── Duration & delay ─────────────────────────────────────────────────
+        "planned_months":      48,
+        "actual_months":       70,
+        "delay_months":        22,
+        "overrun_pct":         46,
+        "has_delay":           True,
+        "start_year":          2015,
+        "planned_end_year":    2019,
+        "actual_end_year":     2020,
+        "duration_str":        "Feb 2015 – Dec 2020",
+        "delay_causes": (
+            "The project experienced a 22-month overrun beyond the original Dec 2019 closure date. "
+            "GEF funds were 93.9% committed by end of 2017, but delays in enterprise recruitment and "
+            "HCFC quota enforcement required continued technical assistance through 2020. "
+            "The COVID-19 pandemic further delayed the Terminal Evaluation to 2021."
+        ),
+        # ── Year-by-year GEF disbursement (Table 5, Terminal Evaluation) ─────
+        "disbursement_by_year": {
+            2015: 180_895,
+            2016: 721_822,
+            2017: 1_556_805,
+            2018: 20_404,
+            2019: 33_517,
+            2020: 100_897,
+            2021: 19_068,
+        },
+        # ── Co-financing by enterprise (Table 6, Terminal Evaluation) ────────
+        "cofinancing_labels":  ["Fayton", "Titan", "TG Chem", "A&K", "Frigo Mkt", "Baku Chinar", "MENR/UNIDO"],
+        "cofinancing_planned": [95_000, 95_000, 43_000, 43_000, 43_000, 43_000, 200_000],
+        "cofinancing_actual":  [110_000, 88_000, 50_000, 39_000, 48_000, 40_000, 195_000],
+        # ── Implementation timeline milestones ───────────────────────────────
+        "timeline_events": [
+            {"yr": 2015, "lab": "Project start",       "type": "plan"},
+            {"yr": 2016, "lab": "Analysers to customs","type": "actual"},
+            {"yr": 2017, "lab": "Mid-Term Review",     "type": "actual"},
+            {"yr": 2019, "lab": "Zero HCFC reported",  "type": "actual"},
+            {"yr": 2020, "lab": "Actual closure",      "type": "actual"},
+            {"yr": 2021, "lab": "Terminal Evaluation", "type": "actual"},
+        ],
+        # ── Stakeholders & gender (Table 14, Terminal Evaluation) ────────────
+        "stakeholders_rich": [
+            {"name": "CCOC / MENR",      "role": "National implementing partner", "pct_women": 83},
+            {"name": "Fayton Ltd.",       "role": "Enterprise: refrigeration",     "pct_women": 25},
+            {"name": "Titan Service Ltd.","role": "Enterprise: refrigeration",     "pct_women": 40},
+            {"name": "TG Chemical",       "role": "Enterprise: foam sector",       "pct_women": 100},
+            {"name": "A&K",               "role": "Enterprise: air conditioning",  "pct_women": 18},
+        ],
+        "gender_rating": "Partially Mainstreamed",
+        "gender_note": (
+            "The project had no formal gender equality strategy or dedicated gender mainstreaming budget. "
+            "Female employment was tracked at enterprise level — ranging from 18 % (A&K) to 100 % (TG Chemical) "
+            "— but was not systematically integrated into project design or M&E frameworks. "
+            "Gender is rated Partially Mainstreamed in line with GEF requirements."
+        ),
+        # ── SDGs ─────────────────────────────────────────────────────────────
         "sdgs":                [12, 13, 17],
         "thematic_justification": (
             "The project directly targeted the phase-out of hydrochlorofluorocarbons (HCFCs) — "
@@ -1693,6 +1752,40 @@ def show_search_tab(filters: dict):
         st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Synthesis History — persistent disk storage
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SYNTH_HISTORY_PATH = pathlib.Path(__file__).parent.parent / "data" / "synthesis_history.json"
+
+def _load_synth_history() -> list:
+    """Load all saved Q&A pairs from disk. Returns list, newest-first."""
+    try:
+        if _SYNTH_HISTORY_PATH.exists():
+            with open(_SYNTH_HISTORY_PATH, "r", encoding="utf-8") as _f:
+                data = json.load(_f)
+            return data if isinstance(data, list) else []
+    except Exception:
+        pass
+    return []
+
+def _save_synth_history(history: list):
+    """Persist Q&A history list to disk."""
+    try:
+        _SYNTH_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_SYNTH_HISTORY_PATH, "w", encoding="utf-8") as _f:
+            json.dump(history, _f, ensure_ascii=False, indent=2)
+    except Exception as _e:
+        st.warning(f"Could not save history: {_e}")
+
+def _delete_synth_item(idx: int):
+    """Remove one Q&A entry by index and persist."""
+    h = _load_synth_history()
+    if 0 <= idx < len(h):
+        h.pop(idx)
+        _save_synth_history(h)
+
 # TAB 2 — Synthesis (RAG — passages only, no LLM)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1702,183 +1795,250 @@ def show_synthesis_tab(filters: dict):
     all_reps = [r for r in (st.session_state.all_reports or [])
                 if r.get("report_id") in PILOT_METADATA]
 
-    col_sel, col_chat = st.columns([3, 7])
+    # ── Sub-tabs: Ask Claude | History ───────────────────────────────────────
+    sub_ask, sub_hist = st.tabs(["💬 Ask Claude", "📋 History"])
 
-    # ── Report selector ──────────────────────────────────────────────────────
-    with col_sel:
-        st.markdown("#### Select Reports")
-        search_term = st.text_input("Filter list", placeholder="Search title…", key="synth_search")
-        visible = [r for r in all_reps
-                   if not search_term or search_term.lower() in r.get("title","").lower()]
+    # ════════════════════════════════════════════════════════════════════════
+    # SUB-TAB 1 — Ask Claude
+    # ════════════════════════════════════════════════════════════════════════
+    with sub_ask:
+        col_sel, col_chat = st.columns([3, 7])
 
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Select all", use_container_width=True):
-                st.session_state["synth_sel"] = [r["report_id"] for r in visible]
-        with c2:
-            if st.button("Clear all", use_container_width=True):
+        # ── Report selector ──────────────────────────────────────────────────
+        with col_sel:
+            st.markdown("#### Select Reports")
+            search_term = st.text_input("Filter list", placeholder="Search title…", key="synth_search")
+            visible = [r for r in all_reps
+                       if not search_term or search_term.lower() in r.get("title","").lower()]
+
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Select all", use_container_width=True):
+                    st.session_state["synth_sel"] = [r["report_id"] for r in visible]
+            with c2:
+                if st.button("Clear all", use_container_width=True):
+                    st.session_state["synth_sel"] = []
+
+            if "synth_sel" not in st.session_state:
                 st.session_state["synth_sel"] = []
 
-        if "synth_sel" not in st.session_state:
-            st.session_state["synth_sel"] = []
+            selected_ids = st.session_state["synth_sel"]
+            st.caption(f"{len(selected_ids)} selected")
 
-        selected_ids = st.session_state["synth_sel"]
-        st.caption(f"{len(selected_ids)} selected")
+            for rep in visible:
+                rid = rep["report_id"]
+                checked = rid in selected_ids
+                label = f"{rep.get('year','')} — {rep.get('title','')[:55]}"
+                new = st.checkbox(label, value=checked, key=f"synth_cb_{rid}")
+                if new and rid not in selected_ids:
+                    selected_ids.append(rid)
+                elif not new and rid in selected_ids:
+                    selected_ids.remove(rid)
 
-        for rep in visible:
-            rid = rep["report_id"]
-            checked = rid in selected_ids
-            label = f"{rep.get('year','')} — {rep.get('title','')[:55]}"
-            new = st.checkbox(label, value=checked, key=f"synth_cb_{rid}")
-            if new and rid not in selected_ids:
-                selected_ids.append(rid)
-            elif not new and rid in selected_ids:
-                selected_ids.remove(rid)
+        # ── Chat area ────────────────────────────────────────────────────────
+        with col_chat:
+            st.markdown("#### Ask a Question Across Reports")
 
-    # ── Chat / RAG ────────────────────────────────────────────────────────────
-    with col_chat:
-        st.markdown("#### Search Across Selected Reports")
-
-        if not selected_ids:
-            st.info("Select one or more reports on the left to begin.")
-            return
-
-        # Show selected report pills
-        sel_reps = [r for r in all_reps if r["report_id"] in selected_ids]
-        pills_html = " ".join(
-            f'<span class="tag tag-blue">{r.get("title","")[:40]}</span>'
-            for r in sel_reps[:8]
-        )
-        if len(sel_reps) > 8:
-            pills_html += f' <span class="tag tag-gray">+{len(sel_reps)-8} more</span>'
-        st.markdown(pills_html, unsafe_allow_html=True)
-        st.divider()
-
-        # Show history
-        for item in st.session_state.synth_history:
-            st.markdown(
-                f'<div style="background:#f0f4ff;border-left:3px solid #003da5;'
-                f'padding:0.5rem 0.8rem;border-radius:0 6px 6px 0;'
-                f'font-size:0.85rem;font-weight:600;color:#003da5;margin-bottom:0.5rem;">'
-                f'❓ {item["query"]}</div>',
-                unsafe_allow_html=True,
-            )
-            answer = item.get("answer", "")
-            n_rep  = item.get("report_count", 0)
-            if answer:
-                import re as _re
-                # Render markdown answer
-                st.markdown(
-                    f'<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;'
-                    f'padding:1rem 1.2rem;margin-bottom:0.3rem;font-size:0.87rem;line-height:1.7;">',
-                    unsafe_allow_html=True,
+            if not selected_ids:
+                st.info("Select one or more reports on the left to begin.")
+            else:
+                # Selected report pills
+                sel_reps = [r for r in all_reps if r["report_id"] in selected_ids]
+                pills_html = " ".join(
+                    f'<span class="tag tag-blue">{r.get("title","")[:40]}</span>'
+                    for r in sel_reps[:8]
                 )
-                st.markdown(answer)
-                st.markdown('</div>', unsafe_allow_html=True)
-                st.caption(f"Synthesised across {n_rep} report(s) · Powered by Claude")
+                if len(sel_reps) > 8:
+                    pills_html += f' <span class="tag tag-gray">+{len(sel_reps)-8} more</span>'
+                st.markdown(pills_html, unsafe_allow_html=True)
+                st.divider()
+
+                # Example chips
+                examples = [
+                    "What are the key lessons learned across these reports?",
+                    "What common recommendations emerge on project sustainability?",
+                    "What findings relate to clean energy effectiveness?",
+                    "How do these projects address gender mainstreaming?",
+                    "What conclusions were drawn about stakeholder engagement?",
+                    "Compare the key findings across all selected reports.",
+                ]
+                st.markdown("**Example queries:**")
+                ex_cols = st.columns(2)
+                for i, ex in enumerate(examples):
+                    with ex_cols[i % 2]:
+                        if st.button(ex, key=f"synth_ex_{i}"):
+                            st.session_state["synth_prefill"] = ex
+
+                query = st.text_area(
+                    "Question",
+                    value=st.session_state.pop("synth_prefill", ""),
+                    height=90,
+                    placeholder="What findings emerge across the selected reports on…",
+                    label_visibility="collapsed",
+                    key="synth_query",
+                )
+
+                send = st.button("Ask Claude", type="primary", use_container_width=False)
+
+                if send and query.strip():
+                    with st.spinner("Claude is synthesising across selected reports…"):
+                        try:
+                            import anthropic as _anthropic
+
+                            try:
+                                _api_key = st.secrets["ANTHROPIC_API_KEY"]
+                            except Exception:
+                                _api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+                            if not _api_key:
+                                st.warning("Add ANTHROPIC_API_KEY to Streamlit secrets to enable synthesis.", icon="⚠️")
+                                st.stop()
+
+                            context_blocks = []
+                            for rid in selected_ids:
+                                sec   = _load_sections_local(rid)
+                                secs  = sec.get("sections", {})
+                                meta  = sec.get("metadata", {})
+                                ai_d  = _load_ai_extraction(rid)
+                                title   = meta.get("title") or ai_d.get("context", {}).get("title", rid)
+                                year    = meta.get("year") or ai_d.get("context", {}).get("year", "")
+                                country = meta.get("country") or ai_d.get("context", {}).get("country", "")
+                                block = (
+                                    f"=== REPORT: {title} ===\n"
+                                    f"Year: {year} | Country: {country}\n\n"
+                                    f"FINDINGS / RESULTS:\n{(secs.get('findings') or secs.get('results') or 'Not available')[:1500]}\n\n"
+                                    f"CONCLUSIONS:\n{secs.get('conclusions', 'Not available')[:1500]}\n\n"
+                                    f"LESSONS LEARNED:\n{secs.get('lessons_learned', 'Not available')[:1500]}\n\n"
+                                    f"RECOMMENDATIONS:\n{secs.get('recommendations', 'Not available')[:1500]}\n"
+                                )
+                                context_blocks.append(block)
+
+                            n = len(context_blocks)
+                            context_text = "\n\n".join(context_blocks)
+
+                            system_prompt = (
+                                f"You are a senior evaluation synthesis analyst at UNIDO's Independent Evaluation Unit (IEU). "
+                                f"You have deep expertise in development effectiveness, OECD-DAC criteria, clean energy, and climate action evaluation.\n\n"
+                                f"You have been provided with {n} UNIDO evaluation report(s). "
+                                f"Synthesise findings ACROSS all reports — analytical, evidence-based, and genuinely useful.\n\n"
+                                f"RULES:\n"
+                                f"1. Synthesise ACROSS reports — identify patterns, tensions, and cross-cutting themes\n"
+                                f"2. Use precise language: 'in 3 of 4 reports', 'the majority of reports'\n"
+                                f"3. Cite specific report titles when making factual claims\n"
+                                f"4. Draw non-obvious analytical conclusions\n"
+                                f"5. Never invent information not in the provided reports\n"
+                                f"6. End EVERY response with a ## Key Findings section with 3–5 bullet points\n\n"
+                                f"TONE: Senior UN evaluation expert writing for a peer audience. Direct, analytical, clear."
+                            )
+
+                            _client = _anthropic.Anthropic(api_key=_api_key)
+                            msg = _client.messages.create(
+                                model="claude-sonnet-4-5",
+                                max_tokens=2048,
+                                system=system_prompt,
+                                messages=[{"role": "user", "content": f"EVALUATION REPORTS:\n\n{context_text}\n\nQUESTION: {query.strip()}"}]
+                            )
+                            answer = msg.content[0].text if msg.content else ""
+
+                            import datetime as _dt
+                            new_entry = {
+                                "query": query.strip(),
+                                "answer": answer,
+                                "report_count": n,
+                                "report_ids": list(selected_ids),
+                                "report_titles": [r.get("title","") for r in sel_reps],
+                                "timestamp": _dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            }
+                            # Save to disk (prepend so newest is first)
+                            history = _load_synth_history()
+                            history.insert(0, new_entry)
+                            _save_synth_history(history)
+
+                            # Show answer immediately in this tab
+                            st.markdown(
+                                f'<div style="background:#f0f4ff;border-left:3px solid #003da5;'
+                                f'padding:0.5rem 0.8rem;border-radius:0 6px 6px 0;'
+                                f'font-size:0.85rem;font-weight:600;color:#003da5;margin-bottom:0.5rem;">'
+                                f'❓ {new_entry["query"]}</div>',
+                                unsafe_allow_html=True,
+                            )
+                            st.markdown(answer)
+                            st.caption(f"Synthesised across {n} report(s) · Powered by Claude · Saved to History")
+
+                        except Exception as e:
+                            st.error(f"Synthesis error: {e}")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SUB-TAB 2 — History
+    # ════════════════════════════════════════════════════════════════════════
+    with sub_hist:
+        st.markdown("#### Synthesis History")
+        st.caption("All questions ever asked — reload anytime without using AI credits.")
+
+        history = _load_synth_history()
+
+        if not history:
+            st.info("No questions saved yet. Ask a question in the **Ask Claude** tab and it will appear here.")
+        else:
+            # Search / filter
+            hist_search = st.text_input("🔍 Search questions", placeholder="Filter by keyword…", key="hist_search")
+            if hist_search:
+                history = [h for h in history if hist_search.lower() in h.get("query","").lower()
+                           or hist_search.lower() in h.get("answer","").lower()]
+                st.caption(f"{len(history)} result(s) matching '{hist_search}'")
+
+            st.markdown(f"**{len(history)} saved question(s)**")
             st.divider()
 
-        # Example chips
-        examples = [
-            "What are the key lessons learned across these reports?",
-            "What common recommendations emerge on project sustainability?",
-            "What findings relate to clean energy effectiveness?",
-            "How do these projects address gender mainstreaming?",
-            "What conclusions were drawn about stakeholder engagement?",
-            "Compare the key findings across all selected reports.",
-        ]
-        st.markdown("**Example queries:**")
-        ex_cols = st.columns(2)
-        for i, ex in enumerate(examples):
-            with ex_cols[i % 2]:
-                if st.button(ex, key=f"synth_ex_{i}"):
-                    st.session_state["synth_prefill"] = ex
+            for i, item in enumerate(history):
+                ts   = item.get("timestamp", "")
+                q    = item.get("query", "")
+                ans  = item.get("answer", "")
+                n_r  = item.get("report_count", 0)
+                rpts = item.get("report_titles", [])
 
-        query = st.text_area(
-            "Question",
-            value=st.session_state.pop("synth_prefill", ""),
-            height=90,
-            placeholder="What findings emerge across the selected reports on…",
-            label_visibility="collapsed",
-            key="synth_query",
-        )
+                col_q, col_del = st.columns([10, 1])
+                with col_q:
+                    st.markdown(
+                        f'<div style="background:#f0f4ff;border-left:3px solid #003da5;'
+                        f'padding:0.5rem 0.8rem;border-radius:0 6px 6px 0;'
+                        f'font-size:0.9rem;font-weight:600;color:#003da5;">'
+                        f'❓ {q}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with col_del:
+                    if st.button("🗑️", key=f"del_hist_{i}", help="Delete this entry"):
+                        _delete_synth_item(i)
+                        st.rerun()
 
-        c_send, c_clear = st.columns([1, 4])
-        with c_send:
-            send = st.button("Search", type="primary", use_container_width=True)
-        with c_clear:
-            if st.button("Clear history"):
-                st.session_state.synth_history = []
+                # Metadata row
+                meta_parts = []
+                if ts:
+                    meta_parts.append(f"📅 {ts}")
+                if n_r:
+                    meta_parts.append(f"📄 {n_r} report(s)")
+                if rpts:
+                    titles_short = ", ".join(t[:35] for t in rpts[:3])
+                    if len(rpts) > 3:
+                        titles_short += f" +{len(rpts)-3} more"
+                    meta_parts.append(f"*{titles_short}*")
+                st.caption(" · ".join(meta_parts))
+
+                # Collapsible answer
+                with st.expander("View answer", expanded=(i == 0)):
+                    if ans:
+                        st.markdown(ans)
+                    else:
+                        st.info("No answer recorded.")
+
+                st.divider()
+
+            # Bulk clear
+            if st.button("🗑️ Clear all history", type="secondary"):
+                _save_synth_history([])
+                st.success("History cleared.")
                 st.rerun()
 
-        if send and query.strip():
-            with st.spinner("Claude is synthesising across selected reports…"):
-                try:
-                    import anthropic as _anthropic
-
-                    try:
-                        _api_key = st.secrets["ANTHROPIC_API_KEY"]
-                    except Exception:
-                        _api_key = os.getenv("ANTHROPIC_API_KEY", "")
-
-                    if not _api_key:
-                        st.warning("Add ANTHROPIC_API_KEY to Streamlit secrets to enable synthesis.", icon="⚠️")
-                        st.stop()
-
-                    # Load sections locally — no backend needed
-                    context_blocks = []
-                    for rid in selected_ids:
-                        sec   = _load_sections_local(rid)
-                        secs  = sec.get("sections", {})
-                        meta  = sec.get("metadata", {})
-                        ai_d  = _load_ai_extraction(rid)
-                        title   = meta.get("title") or ai_d.get("context", {}).get("title", rid)
-                        year    = meta.get("year") or ai_d.get("context", {}).get("year", "")
-                        country = meta.get("country") or ai_d.get("context", {}).get("country", "")
-                        block = (
-                            f"=== REPORT: {title} ===\n"
-                            f"Year: {year} | Country: {country}\n\n"
-                            f"FINDINGS / RESULTS:\n{(secs.get('findings') or secs.get('results') or 'Not available')[:1500]}\n\n"
-                            f"CONCLUSIONS:\n{secs.get('conclusions', 'Not available')[:1500]}\n\n"
-                            f"LESSONS LEARNED:\n{secs.get('lessons_learned', 'Not available')[:1500]}\n\n"
-                            f"RECOMMENDATIONS:\n{secs.get('recommendations', 'Not available')[:1500]}\n"
-                        )
-                        context_blocks.append(block)
-
-                    n = len(context_blocks)
-                    context_text = "\n\n".join(context_blocks)
-
-                    system_prompt = (
-                        f"You are a senior evaluation synthesis analyst at UNIDO's Independent Evaluation Unit (IEU). "
-                        f"You have deep expertise in development effectiveness, OECD-DAC criteria, clean energy, and climate action evaluation.\n\n"
-                        f"You have been provided with {n} UNIDO evaluation report(s). "
-                        f"Synthesise findings ACROSS all reports — analytical, evidence-based, and genuinely useful.\n\n"
-                        f"RULES:\n"
-                        f"1. Synthesise ACROSS reports — identify patterns, tensions, and cross-cutting themes\n"
-                        f"2. Use precise language: 'in 3 of 4 reports', 'the majority of reports'\n"
-                        f"3. Cite specific report titles when making factual claims\n"
-                        f"4. Draw non-obvious analytical conclusions\n"
-                        f"5. Never invent information not in the provided reports\n"
-                        f"6. End EVERY response with a ## Key Findings section with 3–5 bullet points\n\n"
-                        f"TONE: Senior UN evaluation expert writing for a peer audience. Direct, analytical, clear."
-                    )
-
-                    _client = _anthropic.Anthropic(api_key=_api_key)
-                    msg = _client.messages.create(
-                        model="claude-sonnet-4-5",
-                        max_tokens=2048,
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": f"EVALUATION REPORTS:\n\n{context_text}\n\nQUESTION: {query.strip()}"}]
-                    )
-                    answer = msg.content[0].text if msg.content else ""
-                    st.session_state.synth_history.append({
-                        "query": query.strip(),
-                        "answer": answer,
-                        "report_count": n,
-                    })
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Synthesis error: {e}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 3 — Visualize
