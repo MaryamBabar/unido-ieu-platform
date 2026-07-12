@@ -3837,85 +3837,34 @@ def show_main_app():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Sidebar ─────────────────────────────────────────────────────────────────────────
-    with st.sidebar:
-        st.markdown(f"**{st.session_state.display_name}**")
-        st.caption(f"@{st.session_state.username} · {st.session_state.role.title()}")
-        if st.button("Sign out", use_container_width=True):
-            do_logout()
-        st.divider()
+    # ── Left: filters | Right: main content ─────────────────────────────────────────────
+    _lcol, _rcol = st.columns([1, 4], gap="medium")
 
-        st.markdown("### Filters")
+    with _lcol:
+        st.markdown("#### Filters")
         with st.form(key="filter_form"):
-            with st.expander("Thematic Area", expanded=False):
-                thematic_sel = st.multiselect("Thematic", THEMATIC_AREAS,
-                                              label_visibility="collapsed", key="f_thematic")
-            with st.expander("SDGs", expanded=False):
-                sdg_sel_nums = []
-                for row_start in range(1, 18, 3):
-                    row_sdgs = list(range(row_start, min(row_start + 3, 18)))
-                    cols = st.columns(3)
-                    for i, n in enumerate(row_sdgs):
-                        with cols[i]:
-                            if n in _SDG_B64:
-                                st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">'
-                                    f'<img src="data:image/png;base64,{_SDG_B64[n]}" '
-                                    f'title="SDG {n}: {SDG_NAMES[n]}" '
-                                    f'style="width:54px;height:54px;border-radius:6px;'
-                                    f'object-fit:cover;display:block;margin:0 auto;" /></div>',
-                                    unsafe_allow_html=True,
-                                )
-                            else:
-                                color = SDG_COLORS[n]
-                                name_short = SDG_NAMES[n].split()[0]
-                                st.markdown(
-                                    f'<div style="text-align:center;margin-bottom:2px;">'
-                                    f'<div style="display:inline-flex;flex-direction:column;'
-                                    f'align-items:center;justify-content:center;'
-                                    f'width:54px;height:54px;background:{color};color:white;'
-                                    f'font-weight:800;border-radius:6px;font-size:16px;'
-                                    f'font-family:Arial,sans-serif;" '
-                                    f'title="SDG {n}: {SDG_NAMES[n]}">'
-                                    f'<span style="font-size:18px;line-height:1;">{n}</span>'
-                                    f'<span style="font-size:7px;font-weight:600;opacity:0.9;">'
-                                    f'{name_short[:6].upper()}</span>'
-                                    f'</div></div>',
-                                    unsafe_allow_html=True,
-                                )
-                            checked = st.checkbox(
-                                SDG_NAMES[n][:14], key=f"sdg_cb_{n}",
-                                label_visibility="collapsed",
-                            )
-                            if checked:
-                                sdg_sel_nums.append(n)
-                if sdg_sel_nums:
-                    badges = "".join(sdg_badge_html(n, 28) for n in sdg_sel_nums)
-                    st.markdown(f'<div style="margin-top:4px;">{badges}</div>', unsafe_allow_html=True)
-            with st.expander("Year", expanded=False):
-                yr_sel = st.selectbox(
-                    "Year",
-                    ["All years", 2025, 2024, 2023, 2022, 2021],
-                    label_visibility="collapsed", key="f_year",
-                )
-            with st.expander("Evaluation Type", expanded=False):
-                eval_type_sel = st.multiselect(
-                    "Type",
-                    ["Project Evaluation", "Strategic Evaluation", "Country Evaluation",
-                     "Synthesis", "Reference Document"],
-                    label_visibility="collapsed", key="f_eval_type",
-                )
-            with st.expander("Region", expanded=False):
-                region_sel = st.multiselect(
-                    "Region",
-                    ["Africa", "Asia", "Europe", "Latin America", "Middle East", "Global"],
-                    label_visibility="collapsed", key="f_region",
-                )
-            st.form_submit_button("Search", use_container_width=True, type="primary")
+            thematic_sel = st.multiselect(
+                "Thematic Area", THEMATIC_AREAS, key="f_thematic",
+            )
+            region_sel = st.multiselect(
+                "Region",
+                ["Africa", "Asia", "Europe", "Latin America", "Middle East", "Global"],
+                key="f_region",
+            )
+            eval_type_sel = st.multiselect(
+                "Evaluation Type",
+                ["Project Evaluation", "Strategic Evaluation", "Country Evaluation",
+                 "Synthesis", "Reference Document"],
+                key="f_eval_type",
+            )
+            yr_sel = st.selectbox(
+                "Year", ["All years", 2025, 2024, 2023, 2022, 2021], key="f_year",
+            )
+            st.form_submit_button("Apply Filters", use_container_width=True, type="primary")
 
         filters = {
             "thematic":   thematic_sel,
-            "sdgs":       sdg_sel_nums,
+            "sdgs":       [],
             "eval_type":  eval_type_sel,
             "region":     region_sel,
             "years":      [yr_sel] if yr_sel != "All years" else [],
@@ -3923,62 +3872,42 @@ def show_main_app():
             "year_max":   yr_sel if yr_sel != "All years" else None,
             "dac":        [],
         }
+        st.divider()
+        if st.button("Sign out", use_container_width=True):
+            do_logout()
+
+    with _rcol:
+        # ── Tabs ──────────────────────────────────────────────────────────────────────────────
+        tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
+        if is_admin:
+            tab_names.append("Admin")
+
+        tabs = st.tabs(tab_names)
+
+        with tabs[0]:
+            show_search_tab(filters)
+        with tabs[1]:
+            show_synthesis_tab(filters)
+        with tabs[2]:
+            show_visualize_tab()
+        with tabs[3]:
+            show_dac_tab()
+        if is_admin:
+            with tabs[4]:
+                show_admin_tab()
 
         st.divider()
-        st.markdown("### System")
-        if st.button("Health check", use_container_width=True):
-            try:
-                rh = httpx.get(f"{BACKEND_URL}/api/v1/health", timeout=8)
-                st.session_state.backend_healthy = rh.json()
-            except Exception as e:
-                st.session_state.backend_healthy = {"error": str(e)}
-        if st.session_state.backend_healthy:
-            h = st.session_state.backend_healthy
-            if "error" in h:
-                st.markdown('<span class="dot dot-red"></span> Unreachable',
-                            unsafe_allow_html=True)
-            else:
-                cls = "dot-green" if h.get("status") == "healthy" else "dot-amber"
-                st.markdown(f'<span class="dot {cls}"></span> {h.get("status","").title()}',
-                            unsafe_allow_html=True)
-                qcls = "dot-green" if h.get("qdrant_connected") else "dot-red"
-                st.markdown(f'<span class="dot {qcls}"></span> Qdrant ' +
-                            f'{"" if h.get("qdrant_connected") else ""}',
-                            unsafe_allow_html=True)
-                if h.get("document_count", 0):
-                    st.caption(f"{h['document_count']:,} chunks indexed")
+        st.markdown(
+            "<p style='text-align:center;color:#9ca3af;font-size:.72rem;'>"
+            "UNIDO IEU Evaluation Intelligence Platform · Internal use only · "
+            "Retrieved passages should be verified against source documents before formal citation."
+            "</p>",
+            unsafe_allow_html=True,
+        )
 
-    # ── Tabs ──────────────────────────────────────────────────────────────────────────────
-    tab_names = ["Search & Browse", "Synthesis", "Visualize", "OECD-DAC"]
-    if is_admin:
-        tab_names.append("Admin")
-
-    tabs = st.tabs(tab_names)
-
-    with tabs[0]:
-        show_search_tab(filters)
-    with tabs[1]:
-        show_synthesis_tab(filters)
-    with tabs[2]:
-        show_visualize_tab()
-    with tabs[3]:
-        show_dac_tab()
-    if is_admin:
-        with tabs[4]:
-            show_admin_tab()
-
-    st.divider()
-    st.markdown(
-        "<p style='text-align:center;color:#9ca3af;font-size:.72rem;'>"
-        "UNIDO IEU Evaluation Intelligence Platform · Internal use only · "
-        "Retrieved passages should be verified against source documents before formal citation."
-        "</p>",
-        unsafe_allow_html=True,
-    )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Router
-# ─────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Router
+    # ─────────────────────────────────────────────────────────────────────────────
 
 if not st.session_state.session_token:
     show_login_page()
