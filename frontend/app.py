@@ -12,6 +12,7 @@ import io
 import os
 import re
 import json
+import pathlib
 import base64
 import httpx
 import pandas as pd
