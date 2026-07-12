@@ -2648,9 +2648,8 @@ def _extract_rich_infographic_data(rid: str) -> dict:
     if not pdf_path:
         return {}
 
-    # Skip pdfplumber on Streamlit Cloud — it segfaults due to memory limits.
-    # The corpus from ai_extractions is sufficient for non-pilot reports.
-    _is_cloud = _os.path.exists("/mount/src") or _os.environ.get("STREAMLIT_SHARING_MODE") == "streamlit"
+    # Skip pdfplumber on Streamlit Cloud — segfaults due to memory limits.
+    _is_cloud = _os.path.exists('/mount/src') or _os.environ.get('STREAMLIT_SHARING_MODE') == 'streamlit'
     if _is_cloud:
         return {}
 
