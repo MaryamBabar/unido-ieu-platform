@@ -2258,28 +2258,31 @@ def show_visualize_tab():
     if gen_btn and infog_rid:
         with st.spinner("Claude is extracting insights and building your infographic…"):
             try:
-                png_bytes = _build_report_infographic(infog_rid)
-                st.session_state[f"infog_png_{infog_rid}"] = png_bytes
+                html_bytes = _build_report_infographic(infog_rid)
+                st.session_state[f"infog_html_{infog_rid}"] = html_bytes
             except Exception as e:
                 st.error(f"Infographic error: {e}")
                 import traceback; st.code(traceback.format_exc())
 
-    cached_png = st.session_state.get(f"infog_png_{infog_rid}")
-    if cached_png:
-        st.image(cached_png, use_container_width=True)
-        dl_col, regen_col, _ = st.columns([2, 1, 3])
+    cached_html = st.session_state.get(f"infog_html_{infog_rid}")
+    if cached_html:
+        # Render inline preview
+        st.components.v1.html(cached_html.decode("utf-8"), height=900, scrolling=True)
+        dl_col, regen_col, tip_col = st.columns([2, 1, 3])
         with dl_col:
             st.download_button(
-                "⬇ Download PNG",
-                data=cached_png,
-                file_name=f"UNIDO_{infog_rid}_Infographic.png",
-                mime="image/png",
+                "⬇ Download HTML",
+                data=cached_html,
+                file_name=f"UNIDO_{infog_rid}_Infographic.html",
+                mime="text/html",
                 use_container_width=True,
             )
         with regen_col:
             if st.button("↺ Regenerate", key="infog_regen", use_container_width=True):
-                del st.session_state[f"infog_png_{infog_rid}"]
+                del st.session_state[f"infog_html_{infog_rid}"]
                 st.rerun()
+        with tip_col:
+            st.caption("💡 Open the downloaded HTML in your browser → File → Print → Save as PDF for a print-ready copy.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2354,12 +2357,8 @@ Return this exact JSON structure (use null for any field you cannot determine):
 
 
 def _build_report_infographic(rid: str) -> bytes:
-    """Extract data via Claude then render professional matplotlib infographic."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    import matplotlib.gridspec as gridspec
+    """Extract data via Claude then render a self-contained HTML infographic.
+    Returns UTF-8 encoded HTML bytes — no matplotlib, no native deps."""
     import textwrap, io
 
     # ── Gather all data ───────────────────────────────────────────────────────
@@ -2389,14 +2388,6 @@ def _build_report_infographic(rid: str) -> bytes:
     ex = _extract_infographic_data(rid)
 
     # ── Colour helpers ────────────────────────────────────────────────────────
-    C_BLUE   = "#003DA5"
-    C_LBLUE  = "#009EDB"
-    C_WHITE  = "#FFFFFF"
-    C_BG     = "#F5F7FA"
-    C_DARK   = "#1a1a2e"
-    C_GREEN  = "#166534"
-    C_RED    = "#991b1b"
-
     DAC_COLOR = {
         "Highly Satisfactory":       "#16a34a",
         "Satisfactory":              "#22c55e",
@@ -2431,90 +2422,10 @@ def _build_report_infographic(rid: str) -> bytes:
         elif rv >= 3.0: rating_label, rating_color = "Mod. Satisfactory",   "#84cc16"
         else:           rating_label, rating_color = "Unsatisfactory",      "#ef4444"
 
-    # ── Figure ────────────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(20, 14.5), facecolor=C_WHITE, dpi=130)
-    fig.patch.set_facecolor(C_WHITE)
+    # ── Build HTML infographic ────────────────────────────────────────────────
+    def _esc(s): return str(s).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
-    outer = gridspec.GridSpec(
-        5, 1, figure=fig,
-        height_ratios=[0.10, 0.09, 0.42, 0.22, 0.17],
-        hspace=0.018, left=0.015, right=0.985, top=0.985, bottom=0.015,
-    )
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 0 — HEADER
-    # ═══════════════════════════════════════════════════════════════════════════
-    ax_h = fig.add_subplot(outer[0])
-    ax_h.set_facecolor(C_BLUE); ax_h.axis("off")
-    ax_h.set_xlim(0,1); ax_h.set_ylim(0,1)
-
-    ax_h.text(0.011, 0.82, "UNIDO", fontsize=22, fontweight="bold",
-              color=C_WHITE, va="top", transform=ax_h.transAxes)
-    ax_h.text(0.011, 0.32, "Independent Evaluation Unit  ·  Evaluation Intelligence Platform",
-              fontsize=8, color="#93c5fd", va="top", transform=ax_h.transAxes)
-
-    short_title = textwrap.shorten(title, width=105, placeholder="…")
-    ax_h.text(0.16, 0.80, short_title, fontsize=12, fontweight="bold",
-              color=C_WHITE, va="top", transform=ax_h.transAxes)
-
-    meta_right = f"{rtype}  ·  {year}  ·  {country}  ·  {region}"
-    ax_h.text(0.988, 0.82, meta_right, fontsize=8, color="#93c5fd",
-              va="top", ha="right", transform=ax_h.transAxes)
-    if proj_id:
-        ax_h.text(0.988, 0.32, f"Project ID: {proj_id}", fontsize=8,
-                  color="#cbd5e1", va="top", ha="right", transform=ax_h.transAxes)
-
-    ax_h.axhline(0.0, color=C_LBLUE, linewidth=3)
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 1 — STAT CARDS
-    # ═══════════════════════════════════════════════════════════════════════════
-    stat_gs = gridspec.GridSpecFromSubplotSpec(1, 6, subplot_spec=outer[1], wspace=0.012)
-    stats = [
-        ("OVERALL RATING",
-         f"{float(rating):.1f}/6" if rating else "N/A",
-         rating_label, rating_color),
-        ("THEMATIC AREA",    textwrap.shorten(thematic or "—", 22, placeholder="…"), "", C_BLUE),
-        ("DONOR",            textwrap.shorten(donor or "—", 20, placeholder="…"),     "", C_LBLUE),
-        ("BUDGET",
-         f"USD {budget/1e6:.1f}M" if budget else "N/A",
-         "", "#7c3aed"),
-        ("SDGs COVERED",     str(len(sdg_nums)), f"goal{'s' if len(sdg_nums)!=1 else ''}", "#059669"),
-        ("GENDER",
-         (ex.get("gender_rating") or "N/A").replace("Partially ","Partly "),
-         "", GENDER_COLOR.get(ex.get("gender_rating",""), "#9ca3af")),
-    ]
-    for i, (lbl, val, sub, col) in enumerate(stats):
-        ax = fig.add_subplot(stat_gs[i])
-        ax.set_facecolor(C_BG); ax.axis("off")
-        ax.set_xlim(0,1); ax.set_ylim(0,1)
-        ax.add_patch(patches.Rectangle((0,0), 0.045, 1, color=col,
-                     transform=ax.transAxes, clip_on=False))
-        ax.text(0.11, 0.76, lbl, fontsize=6, color="#6b7280",
-                fontweight="bold", va="top", transform=ax.transAxes)
-        ax.text(0.11, 0.50, val, fontsize=10.5, color=C_DARK,
-                fontweight="bold", va="top", transform=ax.transAxes)
-        if sub:
-            ax.text(0.11, 0.14, sub, fontsize=7, color=col,
-                    va="bottom", transform=ax.transAxes, fontstyle="italic")
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 2 — MAIN 3-COLUMN CONTENT
-    # ═══════════════════════════════════════════════════════════════════════════
-    main_gs = gridspec.GridSpecFromSubplotSpec(
-        1, 3, subplot_spec=outer[2], wspace=0.012, width_ratios=[1.05, 1, 1]
-    )
-
-    # ── LEFT: DAC CRITERIA ───────────────────────────────────────────────────
-    ax_dac = fig.add_subplot(main_gs[0])
-    ax_dac.set_facecolor(C_WHITE); ax_dac.axis("off")
-    ax_dac.set_xlim(0,1); ax_dac.set_ylim(0,1)
-
-    ax_dac.add_patch(patches.Rectangle((0,0.96),1,0.04, color=C_BLUE,
-                     transform=ax_dac.transAxes))
-    ax_dac.text(0.03, 0.984, "OECD-DAC EVALUATION CRITERIA", fontsize=8,
-                color=C_WHITE, fontweight="bold", va="top", transform=ax_dac.transAxes)
-
+    # DAC bars HTML
     dac_fields = [
         ("Relevance",      ex.get("dac_relevance",      "Not Assessed")),
         ("Effectiveness",  ex.get("dac_effectiveness",  "Not Assessed")),
@@ -2522,310 +2433,254 @@ def _build_report_infographic(rid: str) -> bytes:
         ("Impact",         ex.get("dac_impact",         "Not Assessed")),
         ("Sustainability", ex.get("dac_sustainability", "Not Assessed")),
     ]
+    dac_html = ""
+    for crit, verdict in dac_fields:
+        score = DAC_SCORE.get(verdict, 0)
+        pct   = int(score / 6 * 100)
+        col   = DAC_COLOR.get(verdict, "#9ca3af")
+        dac_html += f"""
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+            <span style="font-size:12px;font-weight:700;color:#1a1a2e;">{_esc(crit)}</span>
+            <span style="font-size:11px;color:{col};font-weight:700;">{_esc(verdict)}</span>
+          </div>
+          <div style="background:#e5e7eb;border-radius:4px;height:10px;">
+            <div style="width:{pct}%;background:{col};height:10px;border-radius:4px;"></div>
+          </div>
+        </div>"""
 
-    bar_ax = ax_dac.inset_axes([0.03, 0.05, 0.94, 0.87], transform=ax_dac.transAxes)
-    bar_ax.set_facecolor(C_WHITE)
-    criteria_labels = [d[0] for d in dac_fields]
-    criteria_scores = [DAC_SCORE.get(d[1], 0) for d in dac_fields]
-    criteria_colors = [DAC_COLOR.get(d[1], "#9ca3af") for d in dac_fields]
-    verdicts        = [d[1] for d in dac_fields]
-
-    bars = bar_ax.barh(criteria_labels[::-1], criteria_scores[::-1],
-                       color=criteria_colors[::-1], height=0.52,
-                       edgecolor="white", linewidth=0.8)
-    for bar, verdict, score in zip(bars, verdicts[::-1], criteria_scores[::-1]):
-        bar_ax.text(
-            min(score + 0.15, 6.3), bar.get_y() + bar.get_height()/2,
-            verdict, va="center", fontsize=7.5, color="#374151",
-            fontweight="600",
-        )
-    bar_ax.set_xlim(0, 8.5)
-    bar_ax.set_facecolor(C_BG)
-    bar_ax.tick_params(axis="y", labelsize=9, pad=4, labelcolor="#374151")
-    bar_ax.tick_params(axis="x", labelbottom=False, bottom=False)
-    bar_ax.spines["top"].set_visible(False)
-    bar_ax.spines["right"].set_visible(False)
-    bar_ax.spines["bottom"].set_visible(False)
-    bar_ax.spines["left"].set_color("#e5e7eb")
-
-    # Legend
-    legend_items = [
-        ("HS", "#16a34a"), ("S", "#22c55e"), ("MS", "#84cc16"),
-        ("MU", "#f59e0b"), ("U", "#ef4444"), ("HU", "#dc2626"),
-    ]
-    full_labels = ["Highly Satisfactory", "Satisfactory", "Moderately Satisfactory",
-                   "Moderately Unsatisfactory", "Unsatisfactory", "Highly Unsatisfactory"]
-    lx = 0.03; ly = 0.024
-    ax_dac.text(lx, ly, "Scale: ", fontsize=6, color="#6b7280",
-                va="bottom", transform=ax_dac.transAxes)
-    lx += 0.09
-    for abbr, col in legend_items:
-        ax_dac.add_patch(patches.Rectangle((lx, ly-0.008), 0.045, 0.024,
-                         color=col, transform=ax_dac.transAxes))
-        ax_dac.text(lx+0.048, ly, abbr, fontsize=5.5, color="#374151",
-                    va="bottom", transform=ax_dac.transAxes)
-        lx += 0.115
-
-    # ── MIDDLE: ENABLERS & BARRIERS ──────────────────────────────────────────
-    ax_eb = fig.add_subplot(main_gs[1])
-    ax_eb.set_facecolor(C_WHITE); ax_eb.axis("off")
-    ax_eb.set_xlim(0,1); ax_eb.set_ylim(0,1)
-
-    ax_eb.add_patch(patches.Rectangle((0,0.96),1,0.04, color="#0369a1",
-                    transform=ax_eb.transAxes))
-    ax_eb.text(0.03, 0.984, "ENABLERS & BARRIERS", fontsize=8,
-               color=C_WHITE, fontweight="bold", va="top", transform=ax_eb.transAxes)
-
+    # Enablers & barriers HTML
     enablers = (ex.get("enablers") or [])[:4]
     barriers = (ex.get("barriers") or [])[:4]
+    en_html  = "".join(f'<li style="margin-bottom:6px;font-size:12px;color:#14532d;">✅ {_esc(e)}</li>' for e in enablers) or "<li style='color:#9ca3af;font-size:12px;'>No enablers identified</li>"
+    ba_html  = "".join(f'<li style="margin-bottom:6px;font-size:12px;color:#7f1d1d;">⚠️ {_esc(b)}</li>' for b in barriers) or "<li style='color:#9ca3af;font-size:12px;'>No barriers identified</li>"
 
-    # Enablers section
-    ax_eb.add_patch(patches.FancyBboxPatch((0.01, 0.77), 0.98, 0.165,
-                    boxstyle="round,pad=0.01", linewidth=0,
-                    facecolor="#dcfce7", transform=ax_eb.transAxes))
-    ax_eb.text(0.04, 0.924, "✅  ENABLERS", fontsize=7.5, color="#166534",
-               fontweight="bold", va="top", transform=ax_eb.transAxes)
-    y = 0.895
-    for item in enablers:
-        wrapped = textwrap.fill(f"▸  {item}", width=48)
-        n_lines = wrapped.count("\n") + 1
-        ax_eb.text(0.04, y, wrapped, fontsize=7, color="#14532d",
-                   va="top", transform=ax_eb.transAxes, linespacing=1.4)
-        y -= n_lines * 0.044 + 0.008
-        if y < 0.78: break
-
-    # Barriers section
-    ax_eb.add_patch(patches.FancyBboxPatch((0.01, 0.42), 0.98, 0.34,
-                    boxstyle="round,pad=0.01", linewidth=0,
-                    facecolor="#fee2e2", transform=ax_eb.transAxes))
-    ax_eb.text(0.04, 0.745, "⚠️  BARRIERS & CHALLENGES", fontsize=7.5,
-               color="#991b1b", fontweight="bold", va="top", transform=ax_eb.transAxes)
-    y = 0.715
-    for item in barriers:
-        wrapped = textwrap.fill(f"▸  {item}", width=48)
-        n_lines = wrapped.count("\n") + 1
-        ax_eb.text(0.04, y, wrapped, fontsize=7, color="#7f1d1d",
-                   va="top", transform=ax_eb.transAxes, linespacing=1.4)
-        y -= n_lines * 0.044 + 0.008
-        if y < 0.43: break
-
-    # Gender mainstreaming section
-    ax_eb.add_patch(patches.FancyBboxPatch((0.01, 0.01), 0.98, 0.40,
-                    boxstyle="round,pad=0.01", linewidth=0,
-                    facecolor="#ede9fe", transform=ax_eb.transAxes))
-    gender_col = GENDER_COLOR.get(ex.get("gender_rating",""), "#7c3aed")
-    ax_eb.text(0.04, 0.393, "♀  GENDER MAINSTREAMING", fontsize=7.5,
-               color="#5b21b6", fontweight="bold", va="top", transform=ax_eb.transAxes)
-    ax_eb.add_patch(patches.FancyBboxPatch(
-        (0.04, 0.332), 0.48, 0.042,
-        boxstyle="round,pad=0.006", linewidth=0,
-        facecolor=gender_col, transform=ax_eb.transAxes
-    ))
-    ax_eb.text(0.28, 0.353, ex.get("gender_rating") or "N/A",
-               fontsize=7, color="white", fontweight="bold",
-               ha="center", va="center", transform=ax_eb.transAxes)
-    gender_text = ex.get("gender_mainstreaming") or "No specific gender mainstreaming information available."
-    gw = textwrap.fill(gender_text[:320], width=52)
-    ax_eb.text(0.04, 0.320, gw, fontsize=6.8, color="#4c1d95",
-               va="top", transform=ax_eb.transAxes, linespacing=1.4)
-
-    # ── RIGHT: GEOGRAPHIC COVERAGE + SDGs ────────────────────────────────────
-    ax_geo = fig.add_subplot(main_gs[2])
-    ax_geo.set_facecolor(C_WHITE); ax_geo.axis("off")
-    ax_geo.set_xlim(0,1); ax_geo.set_ylim(0,1)
-
-    ax_geo.add_patch(patches.Rectangle((0,0.96),1,0.04, color="#059669",
-                     transform=ax_geo.transAxes))
-    ax_geo.text(0.03, 0.984, "GEOGRAPHIC COVERAGE & SDG ALIGNMENT", fontsize=8,
-                color=C_WHITE, fontweight="bold", va="top", transform=ax_geo.transAxes)
-
-    # Country / Region block
-    ax_geo.add_patch(patches.FancyBboxPatch((0.01, 0.77), 0.98, 0.175,
-                     boxstyle="round,pad=0.01", linewidth=0,
-                     facecolor="#ecfdf5", transform=ax_geo.transAxes))
-    ax_geo.text(0.06, 0.930, "🌍  Country / Region", fontsize=7.5, color="#065f46",
-                fontweight="bold", va="top", transform=ax_geo.transAxes)
-    ax_geo.text(0.06, 0.895, country or "—", fontsize=11.5, color=C_DARK,
-                fontweight="bold", va="top", transform=ax_geo.transAxes)
-    ax_geo.text(0.06, 0.855, region or "—", fontsize=8.5, color="#065f46",
-                va="top", transform=ax_geo.transAxes)
-
-    # SDG tiles
-    ax_geo.text(0.04, 0.752, "SDG Alignment", fontsize=7.5, color="#374151",
-                fontweight="bold", va="top", transform=ax_geo.transAxes)
-
-    cols_per_row = 5
-    tile_w, tile_h = 0.165, 0.095
-    gap_x, gap_y  = 0.022, 0.012
-    sx, sy = 0.03, 0.73
-    for idx, n in enumerate(sdg_nums[:15]):
-        row = idx // cols_per_row
-        col = idx % cols_per_row
-        x = sx + col * (tile_w + gap_x)
-        y = sy - row * (tile_h + gap_y)
+    # SDG badges HTML
+    sdg_html = ""
+    for n in sdg_nums[:12]:
         c = SDG_COL.get(n, "#888")
-        ax_geo.add_patch(patches.FancyBboxPatch(
-            (x, y - tile_h), tile_w, tile_h,
-            boxstyle="round,pad=0.008", linewidth=0, facecolor=c,
-            transform=ax_geo.transAxes,
-        ))
-        ax_geo.text(x + tile_w/2, y - tile_h/2, f"SDG\n{n}",
-                    fontsize=6.5, color="white", fontweight="bold",
-                    ha="center", va="center", transform=ax_geo.transAxes)
+        sdg_html += f'<div style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:48px;height:48px;background:{c};color:white;font-weight:800;border-radius:6px;font-size:14px;margin:3px;"><span>{n}</span><span style="font-size:7px;opacity:0.9;">SDG</span></div>'
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 3 — TIMELINE + LESSONS + RECOMMENDATIONS
-    # ═══════════════════════════════════════════════════════════════════════════
-    bot_gs = gridspec.GridSpecFromSubplotSpec(
-        1, 3, subplot_spec=outer[3], wspace=0.012, width_ratios=[1, 1, 1]
-    )
-
-    # ── Timeline ─────────────────────────────────────────────────────────────
-    ax_tl = fig.add_subplot(bot_gs[0])
-    ax_tl.set_facecolor(C_WHITE); ax_tl.axis("off")
-    ax_tl.set_xlim(0,1); ax_tl.set_ylim(0,1)
-
-    ax_tl.add_patch(patches.Rectangle((0,0.92),1,0.08, color="#7c3aed",
-                    transform=ax_tl.transAxes))
-    ax_tl.text(0.04, 0.96, "PROJECT TIMELINE", fontsize=8, color=C_WHITE,
-               fontweight="bold", va="center", transform=ax_tl.transAxes)
-
-    s_yr = ex.get("start_year")
-    e_yr = ex.get("end_year")
+    # Timeline HTML
+    s_yr  = ex.get("start_year")
+    e_yr  = ex.get("end_year")
     p_dur = ex.get("planned_duration_years")
     a_dur = ex.get("actual_duration_years")
-    delay_note = ex.get("delay_notes")
-
-    tl_ax = ax_tl.inset_axes([0.04, 0.28, 0.92, 0.58], transform=ax_tl.transAxes)
-    tl_ax.set_facecolor(C_BG)
-    tl_ax.set_xlim(0, 10); tl_ax.set_ylim(-0.5, 2)
-    tl_ax.axis("off")
-
-    if p_dur and a_dur and s_yr:
-        # Planned bar
-        tl_ax.add_patch(patches.FancyBboxPatch(
-            (0, 1.1), p_dur * (9.0 / max(a_dur, p_dur, 1)), 0.6,
-            boxstyle="round,pad=0.1", linewidth=0, facecolor="#22c55e", alpha=0.85
-        ))
-        tl_ax.text(0.1, 1.4, f"Planned: {p_dur}y", fontsize=7, color="white",
-                   fontweight="bold", va="center")
-
-        # Actual bar
-        actual_col = "#ef4444" if a_dur > p_dur else "#22c55e"
-        tl_ax.add_patch(patches.FancyBboxPatch(
-            (0, 0.3), a_dur * (9.0 / max(a_dur, p_dur, 1)), 0.6,
-            boxstyle="round,pad=0.1", linewidth=0, facecolor=actual_col, alpha=0.85
-        ))
-        tl_ax.text(0.1, 0.6, f"Actual: {a_dur}y", fontsize=7, color="white",
-                   fontweight="bold", va="center")
-
-        # Year labels
-        tl_ax.text(0, -0.2, str(s_yr), fontsize=7, ha="center", color="#374151")
-        if e_yr:
-            tl_ax.text(a_dur * (9.0 / max(a_dur, p_dur, 1)),
-                       -0.2, str(e_yr), fontsize=7, ha="center", color="#374151")
-        if a_dur > p_dur:
-            delay_yrs = a_dur - p_dur
-            tl_ax.text(5, -0.35, f"⚠ {delay_yrs} year(s) over schedule",
-                       fontsize=7, ha="center", color="#dc2626", fontweight="bold")
+    delay_note = ex.get("delay_notes") or ""
+    timeline_html = ""
+    if p_dur and a_dur:
+        max_dur = max(p_dur, a_dur)
+        p_pct   = int(p_dur / max_dur * 100)
+        a_pct   = int(a_dur / max_dur * 100)
+        delay   = a_dur > p_dur
+        a_col   = "#ef4444" if delay else "#22c55e"
+        timeline_html = f"""
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:3px;">
+            <span>Planned</span><span style="font-weight:700">{p_dur} year(s)</span>
+          </div>
+          <div style="background:#e5e7eb;border-radius:4px;height:12px;">
+            <div style="width:{p_pct}%;background:#22c55e;height:12px;border-radius:4px;"></div>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:3px;">
+            <span>Actual</span><span style="font-weight:700;color:{a_col}">{a_dur} year(s) {'⚠ DELAYED' if delay else '✓ ON TIME'}</span>
+          </div>
+          <div style="background:#e5e7eb;border-radius:4px;height:12px;">
+            <div style="width:{a_pct}%;background:{a_col};height:12px;border-radius:4px;"></div>
+          </div>
+        </div>
+        {'<p style="font-size:11px;color:#dc2626;margin-top:6px;">'+_esc(delay_note)+'</p>' if delay_note and delay else ''}
+        """
+        if s_yr or e_yr:
+            timeline_html += f'<p style="font-size:11px;color:#6b7280;margin-top:4px;">{s_yr or "?"} → {e_yr or "?"}</p>'
     else:
-        tl_ax.text(4.5, 0.75, "Timeline data not available\nin source report",
-                   fontsize=8, ha="center", color="#9ca3af", va="center")
+        timeline_html = '<p style="font-size:12px;color:#9ca3af;">Timeline data not available in source report.</p>'
 
-    if delay_note:
-        dw = textwrap.fill(delay_note[:140], width=48)
-        ax_tl.text(0.04, 0.235, dw, fontsize=6.5, color="#374151",
-                   va="top", transform=ax_tl.transAxes, linespacing=1.35)
+    # Lessons & recs
+    ll_html  = "".join(f'<li style="margin-bottom:8px;font-size:12px;color:#0c4a6e;line-height:1.5;">{_esc(l)}</li>' for l in lessons[:4]) or "<li style='color:#9ca3af;font-size:12px;'>—</li>"
+    rec_html = "".join(f'<li style="margin-bottom:8px;font-size:12px;color:#7c2d12;line-height:1.5;">{_esc(r)}</li>' for r in recs[:4]) or "<li style='color:#9ca3af;font-size:12px;'>—</li>"
 
-    # ── Lessons Learned ───────────────────────────────────────────────────────
-    ax_ll = fig.add_subplot(bot_gs[1])
-    ax_ll.set_facecolor(C_WHITE); ax_ll.axis("off")
-    ax_ll.set_xlim(0,1); ax_ll.set_ylim(0,1)
+    gender_text = _esc(ex.get("gender_mainstreaming") or "No specific gender mainstreaming information available in this report.")
+    gender_rat  = ex.get("gender_rating") or "N/A"
+    gender_col  = GENDER_COLOR.get(gender_rat, "#9ca3af")
+    budget_str  = f"USD {budget/1e6:.1f}M" if budget else "N/A"
 
-    ax_ll.add_patch(patches.Rectangle((0,0.92),1,0.08, color="#0369a1",
-                    transform=ax_ll.transAxes))
-    ax_ll.text(0.04, 0.96, "KEY LESSONS LEARNED", fontsize=8, color=C_WHITE,
-               fontweight="bold", va="center", transform=ax_ll.transAxes)
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>UNIDO Evaluation Infographic — {_esc(rid)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Inter', Arial, sans-serif; background: #fff; color: #1a1a2e; }}
+  .page {{ width: 1200px; margin: 0 auto; padding: 0; }}
+  .header {{ background: #003DA5; color: white; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; }}
+  .header-left .brand {{ font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }}
+  .header-left .sub {{ font-size: 11px; color: #93c5fd; margin-top: 2px; }}
+  .header-left .title {{ font-size: 15px; font-weight: 700; margin-top: 8px; max-width: 700px; line-height: 1.4; }}
+  .header-right {{ text-align: right; font-size: 11px; color: #93c5fd; line-height: 1.8; }}
+  .stat-row {{ display: grid; grid-template-columns: repeat(6,1fr); gap: 4px; background: #f5f7fa; padding: 4px; }}
+  .stat-card {{ background: white; padding: 12px 10px; border-left: 4px solid; }}
+  .stat-card .label {{ font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }}
+  .stat-card .value {{ font-size: 16px; font-weight: 800; }}
+  .stat-card .sub {{ font-size: 10px; font-style: italic; margin-top: 2px; }}
+  .main-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: #f5f7fa; padding: 4px; }}
+  .panel {{ background: white; padding: 14px; }}
+  .panel-header {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: white; padding: 6px 10px; margin: -14px -14px 12px -14px; }}
+  .section-label {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 6px; padding: 5px 8px; color: white; border-radius: 4px; }}
+  .bottom-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: #f5f7fa; padding: 4px; padding-top: 0; }}
+  .footer {{ background: #f8faff; border-top: 3px solid #009EDB; padding: 14px 24px; display: flex; gap: 24px; align-items: flex-start; }}
+  .footer-badge {{ background: #ede9fe; border-radius: 6px; padding: 10px 14px; min-width: 200px; }}
+  .footer-badge .label {{ font-size: 9px; font-weight: 700; color: #7c3aed; text-transform: uppercase; }}
+  .footer-badge .value {{ font-size: 14px; font-weight: 800; color: #4c1d95; margin-top: 4px; }}
+  .footer-note {{ font-size: 10px; color: #6b7280; line-height: 1.6; flex: 1; }}
+  ul {{ padding-left: 16px; }}
+  @media print {{
+    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    .page {{ width: 100%; }}
+  }}
+</style>
+</head>
+<body>
+<div class="page">
 
-    y = 0.88
-    for i, lesson in enumerate(lessons[:4], 1):
-        w = textwrap.fill(f"{i}.  {lesson}", width=55)
-        n = w.count("\n") + 1
-        ax_ll.add_patch(patches.FancyBboxPatch(
-            (0.01, y - 0.006 - n * 0.052), 0.98, n * 0.052 + 0.012,
-            boxstyle="round,pad=0.006", linewidth=0,
-            facecolor="#e0f2fe", transform=ax_ll.transAxes,
-        ))
-        ax_ll.text(0.04, y, w, fontsize=6.7, color="#0c4a6e",
-                   va="top", transform=ax_ll.transAxes, linespacing=1.4)
-        y -= n * 0.054 + 0.022
-        if y < 0.02: break
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="brand">UNIDO</div>
+      <div class="sub">Independent Evaluation Unit · Evaluation Intelligence Platform</div>
+      <div class="title">{_esc(title)}</div>
+    </div>
+    <div class="header-right">
+      <div>{_esc(rtype)}</div>
+      <div>{_esc(str(year))}</div>
+      <div>{_esc(country)}</div>
+      <div>{_esc(region)}</div>
+      {'<div style="margin-top:6px;font-size:10px;color:#cbd5e1;">Project ID: '+_esc(proj_id)+'</div>' if proj_id else ''}
+    </div>
+  </div>
 
-    # ── Recommendations ───────────────────────────────────────────────────────
-    ax_rec = fig.add_subplot(bot_gs[2])
-    ax_rec.set_facecolor(C_WHITE); ax_rec.axis("off")
-    ax_rec.set_xlim(0,1); ax_rec.set_ylim(0,1)
+  <!-- STAT CARDS -->
+  <div class="stat-row">
+    <div class="stat-card" style="border-color:{rating_color};">
+      <div class="label">Overall Rating</div>
+      <div class="value" style="color:{rating_color};">{_esc(str(round(float(rating),1))+'/6') if rating else 'N/A'}</div>
+      <div class="sub" style="color:{rating_color};">{_esc(rating_label)}</div>
+    </div>
+    <div class="stat-card" style="border-color:#003DA5;">
+      <div class="label">Thematic Area</div>
+      <div class="value" style="color:#003DA5;font-size:12px;">{_esc(thematic or '—')}</div>
+    </div>
+    <div class="stat-card" style="border-color:#009EDB;">
+      <div class="label">Donor</div>
+      <div class="value" style="color:#009EDB;font-size:13px;">{_esc(donor or '—')}</div>
+    </div>
+    <div class="stat-card" style="border-color:#7c3aed;">
+      <div class="label">Budget</div>
+      <div class="value" style="color:#7c3aed;">{_esc(budget_str)}</div>
+    </div>
+    <div class="stat-card" style="border-color:#059669;">
+      <div class="label">SDGs Covered</div>
+      <div class="value" style="color:#059669;">{len(sdg_nums)}</div>
+      <div class="sub" style="color:#059669;">goals</div>
+    </div>
+    <div class="stat-card" style="border-color:{gender_col};">
+      <div class="label">Gender</div>
+      <div class="value" style="color:{gender_col};font-size:12px;">{_esc(gender_rat)}</div>
+    </div>
+  </div>
 
-    ax_rec.add_patch(patches.Rectangle((0,0.92),1,0.08, color="#9a3412",
-                     transform=ax_rec.transAxes))
-    ax_rec.text(0.04, 0.96, "KEY RECOMMENDATIONS", fontsize=8, color=C_WHITE,
-                fontweight="bold", va="center", transform=ax_rec.transAxes)
+  <!-- MAIN 3 COLUMNS -->
+  <div class="main-grid">
 
-    y = 0.88
-    for i, rec in enumerate(recs[:4], 1):
-        w = textwrap.fill(f"{i}.  {rec}", width=55)
-        n = w.count("\n") + 1
-        ax_rec.add_patch(patches.FancyBboxPatch(
-            (0.01, y - 0.006 - n * 0.052), 0.98, n * 0.052 + 0.012,
-            boxstyle="round,pad=0.006", linewidth=0,
-            facecolor="#fff7ed", transform=ax_rec.transAxes,
-        ))
-        ax_rec.text(0.04, y, w, fontsize=6.7, color="#7c2d12",
-                    va="top", transform=ax_rec.transAxes, linespacing=1.4)
-        y -= n * 0.054 + 0.022
-        if y < 0.02: break
+    <!-- DAC CRITERIA -->
+    <div class="panel">
+      <div class="panel-header" style="background:#003DA5;">OECD-DAC Evaluation Criteria</div>
+      {dac_html}
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f0f0;">
+        <div style="font-size:9px;color:#6b7280;font-weight:700;margin-bottom:4px;">SCALE</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;">
+          {''.join(f'<span style="background:{c};color:white;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;">{a}</span>' for a,c in [("HS","#16a34a"),("S","#22c55e"),("MS","#84cc16"),("MU","#f59e0b"),("U","#ef4444"),("HU","#dc2626")])}
+        </div>
+      </div>
+    </div>
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 4 — FOOTER
-    # ═══════════════════════════════════════════════════════════════════════════
-    ax_ft = fig.add_subplot(outer[4])
-    ax_ft.set_facecolor("#f8faff"); ax_ft.axis("off")
-    ax_ft.set_xlim(0,1); ax_ft.set_ylim(0,1)
-    ax_ft.axhline(1.0, color=C_LBLUE, linewidth=2)
+    <!-- ENABLERS & BARRIERS + GENDER -->
+    <div class="panel">
+      <div class="panel-header" style="background:#0369a1;">Enablers, Barriers &amp; Gender</div>
+      <div style="background:#dcfce7;border-radius:6px;padding:10px;margin-bottom:10px;">
+        <div style="font-size:10px;font-weight:700;color:#166534;margin-bottom:6px;">✅ ENABLING FACTORS</div>
+        <ul style="list-style:none;padding:0;">{en_html}</ul>
+      </div>
+      <div style="background:#fee2e2;border-radius:6px;padding:10px;margin-bottom:10px;">
+        <div style="font-size:10px;font-weight:700;color:#991b1b;margin-bottom:6px;">⚠️ BARRIERS &amp; CHALLENGES</div>
+        <ul style="list-style:none;padding:0;">{ba_html}</ul>
+      </div>
+      <div style="background:#ede9fe;border-radius:6px;padding:10px;">
+        <div style="font-size:10px;font-weight:700;color:#5b21b6;margin-bottom:6px;">♀ GENDER MAINSTREAMING</div>
+        <span style="background:{gender_col};color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">{_esc(gender_rat)}</span>
+        <p style="font-size:11px;color:#4c1d95;margin-top:6px;line-height:1.5;">{gender_text}</p>
+      </div>
+    </div>
 
-    # Thematic area badge
-    ax_ft.add_patch(patches.FancyBboxPatch(
-        (0.01, 0.55), 0.22, 0.38,
-        boxstyle="round,pad=0.01", linewidth=0,
-        facecolor="#ede9fe", transform=ax_ft.transAxes,
-    ))
-    ax_ft.text(0.02, 0.90, "THEMATIC AREA", fontsize=6.5, color="#7c3aed",
-               fontweight="bold", va="top", transform=ax_ft.transAxes)
-    tw = textwrap.fill(thematic or "—", 28)
-    ax_ft.text(0.02, 0.72, tw, fontsize=9, color="#4c1d95",
-               fontweight="bold", va="top", transform=ax_ft.transAxes)
+    <!-- GEOGRAPHIC COVERAGE + SDGs -->
+    <div class="panel">
+      <div class="panel-header" style="background:#059669;">Geographic Coverage &amp; SDG Alignment</div>
+      <div style="background:#ecfdf5;border-radius:6px;padding:10px;margin-bottom:12px;">
+        <div style="font-size:10px;font-weight:700;color:#065f46;margin-bottom:4px;">🌍 COUNTRY / REGION</div>
+        <div style="font-size:18px;font-weight:800;color:#1a1a2e;">{_esc(country or '—')}</div>
+        <div style="font-size:12px;color:#065f46;font-weight:600;">{_esc(region or '—')}</div>
+      </div>
+      <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">SDG Alignment</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;">{sdg_html}</div>
+    </div>
+  </div>
 
-    # UNEG note
-    uneg = (
-        "This infographic was produced in accordance with UNEG Norms and Standards for Evaluation. "
-        "Content is derived from the official UNIDO independent evaluation report. Findings, conclusions, "
-        "lessons and recommendations represent the views of independent evaluators and do not necessarily "
-        "reflect the position of UNIDO."
-    )
-    ax_ft.text(0.25, 0.88, textwrap.fill(uneg, width=100),
-               fontsize=6.5, color="#374151", va="top", transform=ax_ft.transAxes,
-               linespacing=1.4)
-    ax_ft.text(0.25, 0.22,
-               f"Source: UNIDO IEU Evaluation Portfolio  ·  Generated by UNIDO Evaluation Intelligence Platform  ·  {year}",
-               fontsize=6, color="#9ca3af", va="bottom", transform=ax_ft.transAxes)
+  <!-- BOTTOM ROW -->
+  <div class="bottom-grid">
 
-    # ── Save ──────────────────────────────────────────────────────────────────
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=150, bbox_inches="tight",
-                facecolor=C_WHITE, edgecolor="none")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.read()
+    <!-- TIMELINE -->
+    <div class="panel">
+      <div class="panel-header" style="background:#7c3aed;">Project Timeline</div>
+      {timeline_html}
+    </div>
+
+    <!-- LESSONS LEARNED -->
+    <div class="panel">
+      <div class="panel-header" style="background:#0369a1;">Key Lessons Learned</div>
+      <ul style="list-style:decimal;">{ll_html}</ul>
+    </div>
+
+    <!-- RECOMMENDATIONS -->
+    <div class="panel">
+      <div class="panel-header" style="background:#9a3412;">Key Recommendations</div>
+      <ul style="list-style:decimal;">{rec_html}</ul>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-badge">
+      <div class="label">Thematic Classification</div>
+      <div class="value">{_esc(thematic or '—')}</div>
+    </div>
+    <div class="footer-note">
+      <strong>UNEG Quality Note:</strong> This infographic was produced in accordance with UNEG Norms and Standards for Evaluation.
+      Content is derived from the official UNIDO independent evaluation report. Findings, conclusions, lessons and recommendations
+      represent the views of independent evaluators and do not necessarily reflect the position of UNIDO.<br/>
+      <span style="color:#9ca3af;">Source: UNIDO IEU Evaluation Portfolio · Generated by UNIDO Evaluation Intelligence Platform · {_esc(str(year))}</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    return html.encode("utf-8")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

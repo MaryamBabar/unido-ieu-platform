@@ -9,4 +9,3 @@ pandas
 openpyxl
 plotly
 anthropic
-matplotlib
