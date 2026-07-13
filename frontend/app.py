@@ -3632,6 +3632,104 @@ def _build_report_infographic(rid: str) -> bytes:
 # TAB 4 — OECD-DAC Analysis
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _make_dac_excel(report_ids: list, merged_evidence: dict, pilot_meta: dict) -> bytes:
+    """Build a multi-sheet Excel export for the DAC analysis tab."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    HEADER_FILL = PatternFill("solid", fgColor="003DA5")
+    HEADER_FONT = Font(bold=True, color="FFFFFF", size=10)
+    WRAP        = Alignment(wrap_text=True, vertical="top")
+
+    RATING_SCALE_LOCAL = {
+        6: "Highly Satisfactory (HS)",   5: "Satisfactory (S)",
+        4: "Moderately Satisfactory (MS)", 3: "Moderately Unsatisfactory (MU)",
+        2: "Unsatisfactory (U)",          1: "Highly Unsatisfactory (HU)",
+    }
+    CRITERIA_LOCAL = ["relevance", "effectiveness", "efficiency", "impact", "sustainability"]
+    LABELS_LOCAL   = ["Relevance", "Effectiveness", "Efficiency", "Impact", "Sustainability"]
+
+    def _style(ws, widths):
+        for cell in ws[1]:
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.row_dimensions[1].height = 26
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2), 2):
+            for cell in row:
+                cell.alignment = WRAP
+            ws.row_dimensions[row_idx].height = max(
+                15, min(15 * max(1, max((len(str(c.value or "")) for c in row), default=0) // 60), 120)
+            )
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+
+        # ── Sheet 1: DAC Ratings Summary ─────────────────────────────────
+        rating_rows = []
+        for rid in report_ids:
+            p = pilot_meta.get(rid, {})
+            dac_r  = p.get("dac_ratings", {})
+            dac_rl = p.get("dac_rating_labels", {})
+            row = {
+                "Report ID":        rid,
+                "Title":            p.get("title", ""),
+                "Year":             p.get("year", ""),
+                "Country":          p.get("country", ""),
+                "Region":           p.get("region", ""),
+                "Overall Rating":   f"{p.get('evaluation_rating','')}/6 — {p.get('overall_rating_label','')}",
+            }
+            for crit, lbl in zip(CRITERIA_LOCAL, LABELS_LOCAL):
+                sc = dac_r.get(crit, "")
+                full = dac_rl.get(crit, RATING_SCALE_LOCAL.get(sc, "")) if sc else ""
+                row[lbl] = f"{sc}/6 — {full}" if sc else "—"
+            rating_rows.append(row)
+        df_rat = pd.DataFrame(rating_rows)
+        df_rat.to_excel(writer, sheet_name="DAC Ratings", index=False)
+        _style(writer.sheets["DAC Ratings"], [14, 55, 6, 18, 18, 28, 24, 24, 24, 24, 28])
+
+        # ── Sheet 2: Evidence Passages ────────────────────────────────────
+        ev_rows = []
+        for crit, lbl in zip(CRITERIA_LOCAL, LABELS_LOCAL):
+            for p in merged_evidence.get(crit, []):
+                ev_rows.append({
+                    "DAC Criterion":  lbl,
+                    "Report Title":   p.get("report_title", ""),
+                    "Year":           p.get("year", ""),
+                    "Country":        p.get("country", ""),
+                    "Evidence Passage": p.get("text", ""),
+                })
+        df_ev = pd.DataFrame(ev_rows) if ev_rows else pd.DataFrame(
+            columns=["DAC Criterion", "Report Title", "Year", "Country", "Evidence Passage"])
+        df_ev.to_excel(writer, sheet_name="Evidence Passages", index=False)
+        _style(writer.sheets["Evidence Passages"], [22, 50, 6, 18, 100])
+
+        # ── Sheet 3: Per-Criterion Detail ─────────────────────────────────
+        for crit, lbl in zip(CRITERIA_LOCAL, LABELS_LOCAL):
+            detail_rows = []
+            for rid in report_ids:
+                p   = pilot_meta.get(rid, {})
+                sc  = p.get("dac_ratings", {}).get(crit, "")
+                rl  = p.get("dac_rating_labels", {}).get(crit, "")
+                evs = [e for e in merged_evidence.get(crit, [])
+                       if e.get("country") == p.get("country")]
+                detail_rows.append({
+                    "Report":         p.get("title", rid),
+                    "Country":        p.get("country", ""),
+                    "Year":           p.get("year", ""),
+                    f"{lbl} Rating":  f"{sc}/6 — {rl}" if sc else "—",
+                    "Key Evidence":   " | ".join(e["text"][:300] for e in evs[:3]) if evs else "See findings section",
+                })
+            df_crit = pd.DataFrame(detail_rows)
+            sheet_name = lbl[:31]  # Excel sheet name limit
+            df_crit.to_excel(writer, sheet_name=sheet_name, index=False)
+            _style(writer.sheets[sheet_name], [55, 18, 6, 28, 100])
+
+    return buf.getvalue()
+
+
 def _extract_dac_evidence_local(rid: str) -> dict:
     """
     Extract DAC criterion passages from local extracted_sections JSON.
@@ -3951,8 +4049,26 @@ def show_dac_tab():
         st.divider()
 
         # ── Evidence browser ───────────────────────────────────────────────
-        st.markdown("#### Evidence Browser")
-        st.caption("Verbatim passages extracted from report sections, matched to each DAC criterion.")
+        browser_hdr, dl_col = st.columns([6, 2])
+        with browser_hdr:
+            st.markdown("#### Evidence Browser")
+            st.caption("Verbatim passages extracted from report sections, matched to each DAC criterion.")
+        with dl_col:
+            try:
+                xl_dac = _make_dac_excel(cached_ids, merged_evidence, PILOT_METADATA)
+                label_str = "_".join(
+                    PILOT_METADATA.get(r, {}).get("country", r[:6]) for r in cached_ids
+                )
+                st.download_button(
+                    "⬇ Download Excel",
+                    data=xl_dac,
+                    file_name=f"UNIDO_DAC_Analysis_{label_str}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    type="primary",
+                )
+            except Exception as _xe:
+                st.caption(f"Export error: {_xe}")
 
         tab_labels = [
             f"{lbl} ({len(merged_evidence.get(c, []))})"
