@@ -1150,7 +1150,31 @@ def make_excel_sections(reports_meta: list[dict], sections_by_id: dict) -> bytes
         ws = writer.sheets["Executive Summary"]
         _style_sheet(ws, [14,55,6,18,100])
 
-        # ── Sheet 3: Lessons Learned ─────────────────────────────────────────
+        # ── Sheet 3: Findings & Conclusions ──────────────────────────────────
+        fc_rows = []
+        for rep in reports_meta:
+            rid = rep.get("report_id", "")
+            ai  = _load_ai_extraction(rid)
+            ctx = ai.get("context", {})
+            sec_data = sections_by_id.get(rid, {})
+            secs = (sec_data.get("sections", {}) if sec_data else {})
+            findings    = secs.get("findings") or secs.get("results") or ""
+            conclusions = secs.get("conclusions") or ""
+            fc_rows.append({
+                "Report ID":   rid,
+                "Title":       ctx.get("title") or rep.get("title", ""),
+                "Year":        ctx.get("year") or rep.get("year", ""),
+                "Country":     ctx.get("country") or rep.get("country", ""),
+                "Findings":    findings,
+                "Conclusions": conclusions,
+            })
+        df_fc = pd.DataFrame(fc_rows) if fc_rows else pd.DataFrame(
+            columns=["Report ID","Title","Year","Country","Findings","Conclusions"])
+        df_fc.to_excel(writer, sheet_name="Findings & Conclusions", index=False)
+        ws = writer.sheets["Findings & Conclusions"]
+        _style_sheet(ws, [14,45,6,18,90,90])
+
+        # ── Sheet 4: Lessons Learned ─────────────────────────────────────────
         ll_rows = []
         for rep in reports_meta:
             rid = rep.get("report_id", "")
@@ -1769,9 +1793,11 @@ def show_search_tab(filters: dict):
         filtered = [r for r in filtered
                     if any(s in (r.get("sdgs") or []) for s in filters["sdgs"])]
     if filters["eval_type"]:
-        filtered = [r for r in filtered if r.get("evaluation_type") in filters["eval_type"]]
+        filtered = [r for r in filtered if (r.get("report_type") or r.get("evaluation_type") or "") in filters["eval_type"]]
     if filters["region"]:
         filtered = [r for r in filtered if r.get("region") in filters["region"]]
+    if filters.get("year_min"):
+        filtered = [r for r in filtered if r.get("year") == filters["year_min"]]
 
     if len(all_reps) == 0:
         st.info("No reports loaded. Check backend connection.")
