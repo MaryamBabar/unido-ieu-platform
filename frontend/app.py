@@ -189,6 +189,21 @@ PILOT_METADATA: dict[str, dict] = {
             "except in bamboo handcraft and design. Outcomes disproportionately favoured males. "
             "Gender mainstreaming is rated Unsatisfactory."
         ),
+        # ── Per-criterion DAC ratings (1–6 scale: HS=6, S=5, MS=4, MU=3, U=2, HU=1) ─
+        "dac_ratings": {
+            "relevance":      4,   # Moderately Satisfactory — relevant to national priorities but design gaps
+            "effectiveness":  2,   # Unsatisfactory — core objectives not achieved; value chain did not materialise
+            "efficiency":     2,   # Unsatisfactory — 13-month overrun; USD 21M co-financing received = 0
+            "impact":         2,   # Unsatisfactory — minimal demonstrable economic or environmental impact
+            "sustainability": 2,   # Unsatisfactory — enterprises financially unviable at project close
+        },
+        "dac_rating_labels": {
+            "relevance":      "Moderately Satisfactory",
+            "effectiveness":  "Unsatisfactory",
+            "efficiency":     "Unsatisfactory",
+            "impact":         "Unsatisfactory",
+            "sustainability": "Unsatisfactory",
+        },
         "sdgs":                [8, 12, 15],
         "thematic_justification": (
             "The project focused on developing the bamboo value chain as an agro-industrial sector, "
@@ -288,6 +303,21 @@ PILOT_METADATA: dict[str, dict] = {
             "— but was not systematically integrated into project design or M&E frameworks. "
             "Gender is rated Partially Mainstreamed in line with GEF requirements."
         ),
+        # ── Per-criterion DAC ratings (1–6 scale: HS=6, S=5, MS=4, MU=3, U=2, HU=1) ─
+        "dac_ratings": {
+            "relevance":      6,   # Highly Satisfactory — directly aligned to Montreal Protocol obligations
+            "effectiveness":  5,   # Satisfactory — HCFC phase-out achieved; capacity built
+            "efficiency":     4,   # Moderately Satisfactory — 22-month overrun but GEF funds 99.97% utilised
+            "impact":         5,   # Satisfactory — measurable GHG reductions; institutional change sustained
+            "sustainability": 4,   # Moderately Likely — licensing system in place; some institutional fragility
+        },
+        "dac_rating_labels": {
+            "relevance":      "Highly Satisfactory",
+            "effectiveness":  "Satisfactory",
+            "efficiency":     "Moderately Satisfactory",
+            "impact":         "Satisfactory",
+            "sustainability": "Moderately Likely",
+        },
         # ── SDGs ─────────────────────────────────────────────────────────────
         "sdgs":                [12, 13, 17],
         "thematic_justification": (
@@ -390,6 +420,21 @@ PILOT_METADATA: dict[str, dict] = {
             "Zaporizhzhia from 56% to 67% (2018–2019). The Centre applied for the Women's Energy "
             "Club of Ukraine gender award in 2020. Rated Satisfactory."
         ),
+        # ── Per-criterion DAC ratings (1–6 scale: HS=6, S=5, MS=4, MU=3, U=2, HU=1) ─
+        "dac_ratings": {
+            "relevance":      5,   # Satisfactory — aligned to national RECP needs and EU integration agenda
+            "effectiveness":  5,   # Satisfactory — CPC operational; 325 experts trained; 73 RECP assessments
+            "efficiency":     3,   # Moderately Unsatisfactory — 50-month overrun (83%); significant underspend
+            "impact":         5,   # Satisfactory — measurable resource savings; institutional embedding achieved
+            "sustainability": 4,   # Moderately Satisfactory — CPC financially fragile but institutionally anchored
+        },
+        "dac_rating_labels": {
+            "relevance":      "Satisfactory",
+            "effectiveness":  "Satisfactory",
+            "efficiency":     "Moderately Unsatisfactory",
+            "impact":         "Satisfactory",
+            "sustainability": "Moderately Satisfactory",
+        },
         "sdgs":                [9, 12, 13, 17],
         "thematic_justification": (
             "The project established and operationalized Ukraine's National Cleaner Production Centre "
@@ -488,6 +533,21 @@ PILOT_METADATA: dict[str, dict] = {
             "plan aligned with UNIDO's 2016 Gender Equality strategy was implemented from Year 2. "
             "Rated Satisfactory (Score 5)."
         ),
+        # ── Per-criterion DAC ratings (1–6 scale: HS=6, S=5, MS=4, MU=3, U=2, HU=1) ─
+        "dac_ratings": {
+            "relevance":      6,   # Highly Satisfactory — directly aligned to Uruguay NDC and green economy strategy
+            "effectiveness":  5,   # Satisfactory — all output targets met; policy frameworks adopted
+            "efficiency":     3,   # Moderately Unsatisfactory — 37-month overrun; slow early disbursement
+            "impact":         5,   # Satisfactory — GHG reductions demonstrated; green economy networks established
+            "sustainability": 5,   # Satisfactory — institutionalised in MoE; financial mechanisms embedded
+        },
+        "dac_rating_labels": {
+            "relevance":      "Highly Satisfactory",
+            "effectiveness":  "Satisfactory",
+            "efficiency":     "Moderately Unsatisfactory",
+            "impact":         "Satisfactory",
+            "sustainability": "Satisfactory",
+        },
         "sdgs":                [7, 9, 12, 13, 17],
         "thematic_justification": (
             "The project's primary objective was to stimulate the adoption of sustainable practices "
@@ -3575,6 +3635,7 @@ def _build_report_infographic(rid: str) -> bytes:
 def _extract_dac_evidence_local(rid: str) -> dict:
     """
     Extract DAC criterion passages from local extracted_sections JSON.
+    Priority: dedicated criterion sections → keyword-matched paragraphs from findings/conclusions.
     Returns dict: {criterion: [{"text":..., "report_title":..., "year":..., "country":...}]}
     """
     import re as _re
@@ -3583,52 +3644,64 @@ def _extract_dac_evidence_local(rid: str) -> dict:
     meta     = sec_data.get("metadata", {}) if sec_data else {}
     ai_d     = _load_ai_extraction(rid)
     ctx      = ai_d.get("context", {}) if ai_d else {}
+    pilot    = PILOT_METADATA.get(rid, {})
 
-    title   = meta.get("title") or ctx.get("title") or rid
-    year    = meta.get("year")  or ctx.get("year", "")
-    country = meta.get("country") or ctx.get("country", "")
+    title   = pilot.get("title") or meta.get("title") or ctx.get("title") or rid
+    year    = pilot.get("year")  or meta.get("year")  or ctx.get("year", "")
+    country = pilot.get("country") or meta.get("country") or ctx.get("country", "")
 
-    # Combine all rich text sources
-    full_text = " \n\n ".join(filter(None, [
-        secs.get("findings", ""),
-        secs.get("conclusions", ""),
-        secs.get("relevance", ""),
-        secs.get("effectiveness", ""),
-        secs.get("efficiency", ""),
-        secs.get("impact", ""),
-        secs.get("sustainability", ""),
-    ]))
+    # Dedicated criterion section keys from ingestion pipeline
+    SECTION_KEYS = {
+        "relevance":      ["relevance"],
+        "effectiveness":  ["effectiveness"],
+        "efficiency":     ["efficiency"],
+        "impact":         ["impact"],
+        "sustainability": ["sustainability"],
+    }
 
-    # Keywords to look for per criterion (broader matching)
-    CRITERION_KEYWORDS = {
-        "relevance":     [r"relevan", r"aligned", r"alignment", r"country priorities", r"national priorities", r"needs of", r"strategic fit"],
-        "effectiveness": [r"effectiv", r"achievement", r"results", r"outcomes", r"objectives achieved", r"targets", r"output"],
-        "efficiency":    [r"efficien", r"cost", r"timely", r"value for money", r"resources", r"delays", r"budget", r"implementation period"],
-        "impact":        [r"impact", r"change", r"transformative", r"long.term change", r"broader", r"systemic", r"GHG", r"emissions"],
-        "sustainability":  [r"sustainab", r"replicate", r"after project", r"beyond", r"institutional", r"financial risk", r"ownership", r"continuation"],
+    # Fallback keyword patterns per criterion (applied to findings/conclusions text)
+    KEYWORDS = {
+        "relevance":      [r"relevan", r"national priorit", r"country priorit", r"strategic alignment", r"needs of", r"mandate"],
+        "effectiveness":  [r"effectiv", r"achievement of", r"objectives.*achieved", r"results.*achieved", r"output.*delivered", r"target.*met"],
+        "efficiency":     [r"efficien", r"cost.effective", r"value for money", r"implementation period", r"delay", r"overrun", r"budget utilisation"],
+        "impact":         [r"impact", r"GHG reduction", r"emission", r"transformative", r"systemic change", r"long.term change", r"broader.*change"],
+        "sustainability": [r"sustainab", r"after.*project", r"beyond.*project", r"institutional.*risk", r"financial.*risk", r"replicat", r"ownership"],
     }
 
     evidence = {c: [] for c in DAC_CRITERIA}
 
-    # Split text into paragraphs and score each
-    paragraphs = [p.strip() for p in _re.split(r"\n{2,}", full_text) if len(p.strip()) > 80]
+    def _make_passage(text: str, source: str = "") -> dict:
+        return {"text": text[:750].strip(), "report_title": title,
+                "year": year, "country": country, "source": source}
+
+    # Step 1: use dedicated extracted sections if available
+    for crit, keys in SECTION_KEYS.items():
+        for k in keys:
+            raw = secs.get(k, "")
+            if raw and len(raw.strip()) > 100:
+                # Split into paragraphs
+                paras = [p.strip() for p in _re.split(r"\n{2,}", raw) if len(p.strip()) > 80]
+                for para in paras[:5]:
+                    evidence[crit].append(_make_passage(para, "dedicated section"))
+
+    # Step 2: keyword search across findings + conclusions for any criterion still empty
+    combined = "\n\n".join(filter(None, [secs.get("findings", ""), secs.get("conclusions", "")]))
+    paragraphs = [p.strip() for p in _re.split(r"\n{2,}", combined) if len(p.strip()) > 100]
 
     for para in paragraphs:
         para_lower = para.lower()
-        for crit, patterns in CRITERION_KEYWORDS.items():
+        for crit, patterns in KEYWORDS.items():
+            if len(evidence[crit]) >= 6:
+                continue  # already have enough
             matches = sum(1 for pat in patterns if _re.search(pat, para_lower))
             if matches >= 1:
-                evidence[crit].append({
-                    "text": para[:700],
-                    "report_title": title,
-                    "year": year,
-                    "country": country,
-                    "score": matches,
-                })
+                # avoid duplicating passages already added
+                if not any(p["text"][:80] == para[:80] for p in evidence[crit]):
+                    evidence[crit].append(_make_passage(para, "findings/conclusions"))
 
-    # Sort by score descending, cap at 8 per criterion
+    # Cap at 6 per criterion
     for crit in evidence:
-        evidence[crit] = sorted(evidence[crit], key=lambda x: x["score"], reverse=True)[:8]
+        evidence[crit] = evidence[crit][:6]
 
     return evidence
 
@@ -3703,51 +3776,109 @@ def show_dac_tab():
             for c in DAC_CRITERIA:
                 merged_evidence[c].extend(ev.get(c, []))
 
-        # ── Radar chart ────────────────────────────────────────────────────
-        st.markdown("#### Evidence Coverage Radar")
-        st.caption(
-            "Score = volume of evidence passages found per criterion across report sections "
-            "(text-based proxy — not an AI quality rating)."
-        )
+        # ── Rating scale reference ─────────────────────────────────────────
+        RATING_SCALE = {6: "HS", 5: "S", 4: "MS", 3: "MU", 2: "U", 1: "HU"}
+        RATING_LABELS_FULL = {
+            6: "Highly Satisfactory", 5: "Satisfactory",
+            4: "Moderately Satisfactory", 3: "Moderately Unsatisfactory",
+            2: "Unsatisfactory", 1: "Highly Unsatisfactory",
+        }
+        RATING_COLORS = {6: "#15803d", 5: "#16a34a", 4: "#ca8a04", 3: "#ea580c", 2: "#dc2626", 1: "#991b1b"}
 
+        # ── Radar chart using actual DAC ratings ──────────────────────────
+        st.markdown("#### OECD-DAC Criterion Ratings")
+        st.caption("Ratings on the 6-point GEF/UNIDO scale: HS=6 · S=5 · MS=4 · MU=3 · U=2 · HU=1")
+
+        TRACE_COLORS = ["#009EDB", "#f97316", "#22c55e", "#a855f7", "#ef4444"]
         fig_radar = go.Figure()
-        for rid in cached_ids:
-            ev     = evidence_by_rep.get(rid, {})
-            counts = [len(ev.get(c, [])) for c in DAC_CRITERIA]
-            max_c  = max(counts) or 1
-            scores = [round((cnt / max_c) * 10, 1) for cnt in counts]
-            rep_title = next(
-                (r.get("title", "")[:35] for r in all_reps if r["report_id"] == rid), rid[:8]
-            )
+
+        for i, rid in enumerate(cached_ids):
+            pilot = PILOT_METADATA.get(rid, {})
+            dac_r = pilot.get("dac_ratings", {c: 3 for c in DAC_CRITERIA})
+            scores = [dac_r.get(c, 3) for c in DAC_CRITERIA]
+            rep_title = pilot.get("title", rid)[:40]
+            country   = pilot.get("country", "")
+            color     = TRACE_COLORS[i % len(TRACE_COLORS)]
+
             fig_radar.add_trace(go.Scatterpolar(
                 r=scores + [scores[0]],
                 theta=DAC_LABELS + [DAC_LABELS[0]],
-                name=rep_title,
+                name=f"{country} ({pilot.get('year','')})",
                 fill="toself",
-                opacity=0.55,
+                fillcolor=color.replace("#", "rgba(") + ",0.15)" if "#" in color else color,
+                line=dict(color=color, width=2.5),
+                opacity=0.9,
+                hovertemplate=(
+                    "<b>%{theta}</b><br>"
+                    "Rating: %{r}/6<br>"
+                    "<extra>" + country + "</extra>"
+                ),
             ))
 
         fig_radar.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+            polar=dict(
+                bgcolor="rgba(248,250,252,0.8)",
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 6],
+                    tickvals=[1, 2, 3, 4, 5, 6],
+                    ticktext=["HU·1", "U·2", "MU·3", "MS·4", "S·5", "HS·6"],
+                    tickfont=dict(size=9, color="#64748b"),
+                    gridcolor="#e2e8f0",
+                    linecolor="#cbd5e1",
+                ),
+                angularaxis=dict(
+                    tickfont=dict(size=12, color="#1e3a5f", family="Inter, sans-serif"),
+                    linecolor="#cbd5e1",
+                ),
+            ),
             showlegend=len(cached_ids) > 1,
-            margin=dict(t=30, b=20, l=30, r=30),
-            height=380,
+            legend=dict(font=dict(size=11), bgcolor="rgba(255,255,255,0.9)", bordercolor="#e2e8f0", borderwidth=1),
+            margin=dict(t=20, b=20, l=40, r=40),
+            height=420,
             paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
         )
         st.plotly_chart(fig_radar, use_container_width=True)
 
-        # ── Summary stats row ──────────────────────────────────────────────
-        stat_cols = st.columns(5)
-        for col, crit, label, color in zip(stat_cols, DAC_CRITERIA, DAC_LABELS, DAC_COLORS):
-            total = len(merged_evidence.get(crit, []))
-            col.markdown(
-                f'<div style="background:white;border:2px solid {color};border-radius:8px;'
-                f'padding:10px;text-align:center;">'
-                f'<div style="font-size:22px;font-weight:800;color:{color};">{total}</div>'
-                f'<div style="font-size:10px;color:#64748b;font-weight:600;">{label}</div>'
-                f'<div style="font-size:9px;color:#94a3b8;">passages</div></div>',
-                unsafe_allow_html=True,
-            )
+        # ── Per-criterion rating cards ─────────────────────────────────────
+        if len(cached_ids) == 1:
+            rid    = cached_ids[0]
+            pilot  = PILOT_METADATA.get(rid, {})
+            dac_r  = pilot.get("dac_ratings", {})
+            dac_rl = pilot.get("dac_rating_labels", {})
+            stat_cols = st.columns(5)
+            for col, crit, label, color in zip(stat_cols, DAC_CRITERIA, DAC_LABELS, DAC_COLORS):
+                score = dac_r.get(crit, "—")
+                rlabel = dac_rl.get(crit, "")
+                rc = RATING_COLORS.get(score, "#64748b") if isinstance(score, int) else "#64748b"
+                col.markdown(
+                    f'<div style="background:white;border:2px solid {rc};border-radius:10px;'
+                    f'padding:12px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.06);">'
+                    f'<div style="font-size:26px;font-weight:800;color:{rc};">{score}</div>'
+                    f'<div style="font-size:9px;font-weight:700;color:{rc};letter-spacing:0.5px;">'
+                    f'{RATING_SCALE.get(score,"") if isinstance(score,int) else ""}</div>'
+                    f'<div style="font-size:10px;color:#1e3a5f;font-weight:600;margin-top:4px;">{label}</div>'
+                    f'<div style="font-size:8.5px;color:#64748b;margin-top:2px;line-height:1.3;">{rlabel}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            # Multi-report: show comparison table
+            st.markdown("**Ratings comparison**")
+            header = "| Criterion | " + " | ".join(
+                PILOT_METADATA.get(r, {}).get("country", r[:8]) for r in cached_ids
+            ) + " |"
+            sep = "|---|" + "---|" * len(cached_ids)
+            rows = []
+            for crit, label in zip(DAC_CRITERIA, DAC_LABELS):
+                cells = []
+                for r in cached_ids:
+                    sc = PILOT_METADATA.get(r, {}).get("dac_ratings", {}).get(crit, "—")
+                    lbl = RATING_SCALE.get(sc, "—") if isinstance(sc, int) else "—"
+                    cells.append(f"**{sc}** ({lbl})")
+                rows.append(f"| {label} | " + " | ".join(cells) + " |")
+            st.markdown("\n".join([header, sep] + rows))
 
         st.divider()
 
