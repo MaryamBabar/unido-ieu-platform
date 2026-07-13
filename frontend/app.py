@@ -3572,6 +3572,67 @@ def _build_report_infographic(rid: str) -> bytes:
 # TAB 4 — OECD-DAC Analysis
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _extract_dac_evidence_local(rid: str) -> dict:
+    """
+    Extract DAC criterion passages from local extracted_sections JSON.
+    Returns dict: {criterion: [{"text":..., "report_title":..., "year":..., "country":...}]}
+    """
+    import re as _re
+    sec_data = _load_sections_local(rid)
+    secs     = sec_data.get("sections", {}) if sec_data else {}
+    meta     = sec_data.get("metadata", {}) if sec_data else {}
+    ai_d     = _load_ai_extraction(rid)
+    ctx      = ai_d.get("context", {}) if ai_d else {}
+
+    title   = meta.get("title") or ctx.get("title") or rid
+    year    = meta.get("year")  or ctx.get("year", "")
+    country = meta.get("country") or ctx.get("country", "")
+
+    # Combine all rich text sources
+    full_text = " \n\n ".join(filter(None, [
+        secs.get("findings", ""),
+        secs.get("conclusions", ""),
+        secs.get("relevance", ""),
+        secs.get("effectiveness", ""),
+        secs.get("efficiency", ""),
+        secs.get("impact", ""),
+        secs.get("sustainability", ""),
+    ]))
+
+    # Keywords to look for per criterion (broader matching)
+    CRITERION_KEYWORDS = {
+        "relevance":     [r"relevan", r"aligned", r"alignment", r"country priorities", r"national priorities", r"needs of", r"strategic fit"],
+        "effectiveness": [r"effectiv", r"achievement", r"results", r"outcomes", r"objectives achieved", r"targets", r"output"],
+        "efficiency":    [r"efficien", r"cost", r"timely", r"value for money", r"resources", r"delays", r"budget", r"implementation period"],
+        "impact":        [r"impact", r"change", r"transformative", r"long.term change", r"broader", r"systemic", r"GHG", r"emissions"],
+        "sustainability":  [r"sustainab", r"replicate", r"after project", r"beyond", r"institutional", r"financial risk", r"ownership", r"continuation"],
+    }
+
+    evidence = {c: [] for c in DAC_CRITERIA}
+
+    # Split text into paragraphs and score each
+    paragraphs = [p.strip() for p in _re.split(r"\n{2,}", full_text) if len(p.strip()) > 80]
+
+    for para in paragraphs:
+        para_lower = para.lower()
+        for crit, patterns in CRITERION_KEYWORDS.items():
+            matches = sum(1 for pat in patterns if _re.search(pat, para_lower))
+            if matches >= 1:
+                evidence[crit].append({
+                    "text": para[:700],
+                    "report_title": title,
+                    "year": year,
+                    "country": country,
+                    "score": matches,
+                })
+
+    # Sort by score descending, cap at 8 per criterion
+    for crit in evidence:
+        evidence[crit] = sorted(evidence[crit], key=lambda x: x["score"], reverse=True)[:8]
+
+    return evidence
+
+
 def show_dac_tab():
     load_reports()
     # Demo phase: restrict to the 4 verified pilot reports only
@@ -3618,124 +3679,174 @@ def show_dac_tab():
             st.info("Select a report on the left and click Analyse.")
             return
 
-        if analyse or st.session_state.get("dac_results"):
-            if analyse:
-                with st.spinner("Retrieving DAC evidence…"):
-                    try:
-                        r = api("GET", "/api/v1/dac-evidence",
-                                params={"report_ids": ",".join(dac_report_ids)})
-                        result = r.json() if r.status_code == 200 else {}
-                        st.session_state["dac_results"] = result
-                        st.session_state["dac_report_ids"] = dac_report_ids
-                    except Exception as e:
-                        st.error(str(e))
-                        return
+        # Trigger or use cached
+        if analyse:
+            with st.spinner("Extracting DAC evidence from reports…"):
+                evidence_by_rep = {}
+                for rid in dac_report_ids:
+                    evidence_by_rep[rid] = _extract_dac_evidence_local(rid)
+                st.session_state["dac_evidence_by_rep"] = evidence_by_rep
+                st.session_state["dac_report_ids"]      = dac_report_ids
+                st.session_state.pop("dac_ai_summary", None)
 
-            result = st.session_state.get("dac_results", {})
-            evidence = result.get("evidence", {})
-            chunk_counts = result.get("chunk_counts", {})
+        if not st.session_state.get("dac_evidence_by_rep"):
+            st.info("Click **Analyse** to extract DAC evidence from the selected reports.")
+            return
 
-            # ── Radar chart ────────────────────────────────────────────────
-            st.markdown("#### Evidence Coverage Radar")
-            st.caption(
-                "Score = relative volume of evidence passages found for each criterion "
-                "(RAG-based proxy — not an AI-generated quality rating)."
+        evidence_by_rep = st.session_state["dac_evidence_by_rep"]
+        cached_ids      = st.session_state.get("dac_report_ids", dac_report_ids)
+
+        # Merge evidence across all selected reports for the browser
+        merged_evidence = {c: [] for c in DAC_CRITERIA}
+        for rid in cached_ids:
+            ev = evidence_by_rep.get(rid, {})
+            for c in DAC_CRITERIA:
+                merged_evidence[c].extend(ev.get(c, []))
+
+        # ── Radar chart ────────────────────────────────────────────────────
+        st.markdown("#### Evidence Coverage Radar")
+        st.caption(
+            "Score = volume of evidence passages found per criterion across report sections "
+            "(text-based proxy — not an AI quality rating)."
+        )
+
+        fig_radar = go.Figure()
+        for rid in cached_ids:
+            ev     = evidence_by_rep.get(rid, {})
+            counts = [len(ev.get(c, [])) for c in DAC_CRITERIA]
+            max_c  = max(counts) or 1
+            scores = [round((cnt / max_c) * 10, 1) for cnt in counts]
+            rep_title = next(
+                (r.get("title", "")[:35] for r in all_reps if r["report_id"] == rid), rid[:8]
+            )
+            fig_radar.add_trace(go.Scatterpolar(
+                r=scores + [scores[0]],
+                theta=DAC_LABELS + [DAC_LABELS[0]],
+                name=rep_title,
+                fill="toself",
+                opacity=0.55,
+            ))
+
+        fig_radar.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+            showlegend=len(cached_ids) > 1,
+            margin=dict(t=30, b=20, l=30, r=30),
+            height=380,
+            paper_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
+
+        # ── Summary stats row ──────────────────────────────────────────────
+        stat_cols = st.columns(5)
+        for col, crit, label, color in zip(stat_cols, DAC_CRITERIA, DAC_LABELS, DAC_COLORS):
+            total = len(merged_evidence.get(crit, []))
+            col.markdown(
+                f'<div style="background:white;border:2px solid {color};border-radius:8px;'
+                f'padding:10px;text-align:center;">'
+                f'<div style="font-size:22px;font-weight:800;color:{color};">{total}</div>'
+                f'<div style="font-size:10px;color:#64748b;font-weight:600;">{label}</div>'
+                f'<div style="font-size:9px;color:#94a3b8;">passages</div></div>',
+                unsafe_allow_html=True,
             )
 
-            fig_radar = go.Figure()
-            for rid in dac_report_ids:
-                counts = chunk_counts.get(rid, {c: 0 for c in DAC_CRITERIA})
-                max_c  = max(counts.values()) or 1
-                scores = [round((counts.get(c, 0) / max_c) * 10, 1) for c in DAC_CRITERIA]
-                rep_title = next(
-                    (r.get("title","")[:30] for r in all_reps if r["report_id"] == rid), rid[:8]
-                )
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=scores + [scores[0]],
-                    theta=DAC_LABELS + [DAC_LABELS[0]],
-                    name=rep_title,
-                    fill="toself",
-                    opacity=0.6,
-                ))
+        st.divider()
 
-            fig_radar.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-                showlegend=True if len(dac_report_ids) > 1 else False,
-                margin=dict(t=30, b=20, l=30, r=30),
-                height=380,
-                paper_bgcolor="rgba(0,0,0,0)",
-            )
-            st.plotly_chart(fig_radar, use_container_width=True)
-
-            # ── AI Summary per criterion ──────────────────────────────────
-            st.markdown("#### AI Summary by Criterion")
-            if st.button("✨ Generate AI Summary across criteria", type="primary", use_container_width=True, key="dac_ai_btn"):
-                dac_rids = st.session_state.get("dac_report_ids", [])
-                with st.spinner("Claude is analysing DAC evidence across selected reports…"):
+        # ── AI Summary ────────────────────────────────────────────────────
+        st.markdown("#### AI Summary by Criterion")
+        if st.button("✨ Generate AI Summary across criteria", type="primary",
+                     use_container_width=True, key="dac_ai_btn"):
+            with st.spinner("Claude is analysing DAC evidence across selected reports…"):
+                try:
+                    import anthropic as _anthropic
                     try:
-                        # Build context from evidence passages
-                        ev = evidence
+                        _api_key = st.secrets["ANTHROPIC_API_KEY"]
+                    except Exception:
+                        _api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+                    if not _api_key:
+                        st.warning("Add ANTHROPIC_API_KEY to Streamlit secrets.", icon="⚠️")
+                    else:
                         context_lines = []
                         for crit, label in zip(DAC_CRITERIA, DAC_LABELS):
-                            passages = ev.get(crit, [])[:5]
+                            passages = merged_evidence.get(crit, [])[:4]
                             if passages:
-                                context_lines.append(f"\n### {label.upper()}\n")
+                                context_lines.append(f"\n### {label.upper()}")
                                 for p in passages:
-                                    context_lines.append(f"[{p.get('report_title','')}]: {p.get('text','')[:400]}")
+                                    context_lines.append(
+                                        f"[{p.get('report_title','')} – {p.get('country','')}]: "
+                                        f"{p.get('text','')[:500]}"
+                                    )
                         context_text = "\n".join(context_lines)
-                        payload = {
-                            "query": f"Provide a concise analytical summary of the evaluation evidence for each of the 5 OECD-DAC criteria: Relevance, Effectiveness, Efficiency, Impact, and Sustainability. For each criterion, identify the key patterns and cross-cutting findings across the selected reports. Use the evidence provided.\n\nEVIDENCE:\n{context_text}",
-                            "report_ids": dac_rids,
-                        }
-                        r_ai = api("POST", "/api/v1/synthesize", json=payload)
-                        if r_ai.status_code == 200:
-                            st.session_state["dac_ai_summary"] = r_ai.json().get("answer", "")
-                        else:
-                            st.error(f"AI summary failed: {r_ai.status_code}")
-                    except Exception as e:
-                        st.error(str(e))
 
-            if st.session_state.get("dac_ai_summary"):
-                st.markdown(
-                    '<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;' +
-                    'padding:1rem 1.2rem;margin:0.5rem 0 1rem;font-size:0.87rem;line-height:1.7;">',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(st.session_state["dac_ai_summary"])
-                st.markdown('</div>', unsafe_allow_html=True)
-                if st.button("Clear summary", key="dac_clear_sum"):
-                    del st.session_state["dac_ai_summary"]
-                    st.rerun()
+                        _client = _anthropic.Anthropic(api_key=_api_key)
+                        msg = _client.messages.create(
+                            model="claude-sonnet-4-5",
+                            max_tokens=2048,
+                            system=(
+                                "You are a senior UNIDO evaluation analyst with deep expertise in "
+                                "OECD-DAC evaluation criteria. You write concise, evidence-based "
+                                "analytical summaries for UN senior management.\n\n"
+                                "RULES:\n"
+                                "1. Address each of the 5 DAC criteria with a clear heading\n"
+                                "2. Cite specific reports by name\n"
+                                "3. Be analytical — identify patterns and cross-cutting findings\n"
+                                "4. Never invent information not in the provided evidence\n"
+                                "5. End with ## Key Cross-Cutting Findings (3 bullet points)"
+                            ),
+                            messages=[{
+                                "role": "user",
+                                "content": (
+                                    f"Analyse the OECD-DAC criteria evidence from these "
+                                    f"{len(cached_ids)} UNIDO evaluation report(s) and provide "
+                                    f"an analytical summary per criterion.\n\nEVIDENCE:\n{context_text}"
+                                )
+                            }]
+                        )
+                        st.session_state["dac_ai_summary"] = msg.content[0].text if msg.content else ""
+                except Exception as e:
+                    st.error(f"AI summary failed: {e}")
 
-            st.divider()
+        if st.session_state.get("dac_ai_summary"):
+            st.markdown(
+                '<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;'
+                'padding:1rem 1.2rem;margin:0.5rem 0 1rem;font-size:0.87rem;line-height:1.7;">',
+                unsafe_allow_html=True,
+            )
+            st.markdown(st.session_state["dac_ai_summary"])
+            st.markdown('</div>', unsafe_allow_html=True)
+            if st.button("Clear summary", key="dac_clear_sum"):
+                del st.session_state["dac_ai_summary"]
+                st.rerun()
 
-            # ── Evidence browser ───────────────────────────────────────────
-            st.markdown("#### Evidence Browser")
-            st.caption("Click a criterion tab to read verbatim passages from the reports.")
+        st.divider()
 
-            tab_labels = [f"{lbl} ({len(evidence.get(c,[]))})"
-                          for c, lbl in zip(DAC_CRITERIA, DAC_LABELS)]
-            tabs = st.tabs(tab_labels)
+        # ── Evidence browser ───────────────────────────────────────────────
+        st.markdown("#### Evidence Browser")
+        st.caption("Verbatim passages extracted from report sections, matched to each DAC criterion.")
 
-            for tab, criterion, label in zip(tabs, DAC_CRITERIA, DAC_LABELS):
-                with tab:
-                    passages = evidence.get(criterion, [])
-                    if not passages:
-                        st.caption("No passages found for this criterion in the selected reports.")
-                        continue
-                    for p in passages[:15]:  # cap at 15 per criterion
-                        st.markdown(f"""
-                        <div class="dac-card">
-                          <div class="passage-title">
-                            {p.get("report_title","")}
-                          </div>
-                          <div class="passage-meta">
-                            {p.get("year","")} · {p.get("country","")}
-                            &nbsp;·&nbsp; Page ~{p.get("page_hint","")}
-                          </div>
-                          <div class="dac-quote">{p.get("text","")[:600]}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+        tab_labels = [
+            f"{lbl} ({len(merged_evidence.get(c, []))})"
+            for c, lbl in zip(DAC_CRITERIA, DAC_LABELS)
+        ]
+        tabs = st.tabs(tab_labels)
+
+        for tab, criterion, label, color in zip(tabs, DAC_CRITERIA, DAC_LABELS, DAC_COLORS):
+            with tab:
+                passages = merged_evidence.get(criterion, [])
+                if not passages:
+                    st.caption("No passages found for this criterion in the selected reports.")
+                    continue
+                for p in passages[:12]:
+                    st.markdown(
+                        f'<div class="dac-card">'
+                        f'<div class="passage-title" style="color:{color};">'
+                        f'{p.get("report_title","")}</div>'
+                        f'<div class="passage-meta">'
+                        f'{p.get("year","")} · {p.get("country","")}</div>'
+                        f'<div class="dac-quote">{p.get("text","")[:650]}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Admin tab
