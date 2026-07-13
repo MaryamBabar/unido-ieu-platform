@@ -127,6 +127,7 @@ PILOT_METADATA: dict[str, dict] = {
         "project_id":          "100043",
         "gef_id":              "4114",
         "title":               "Independent Terminal Evaluation: The Project \"Bamboo Processing for Sri Lanka\"",
+        "short_title":         "Bamboo Processing for Sri Lanka",
         "year":                2021,
         "country":             "Sri Lanka",
         "region":              "Asia and the Pacific",
@@ -237,6 +238,7 @@ PILOT_METADATA: dict[str, dict] = {
         "project_id":          "100321",
         "gef_id":              "4602",
         "title":               "Independent Terminal Evaluation: Initiation of the HCFC Phase Out in the Republic of Azerbaijan",
+        "short_title":         "HCFC Phase Out – Azerbaijan",
         "year":                2021,
         "country":             "Azerbaijan",
         "region":              "Europe and Central Asia",
@@ -350,6 +352,7 @@ PILOT_METADATA: dict[str, dict] = {
     "UNIDO-104112": {
         "project_id":          "104112",
         "title":               "Independent Terminal Evaluation: Promoting the Adaptation and Adoption of RECP (Resource Efficient and Cleaner Production) Through the Establishment and Operation of a Cleaner Production Centre (CPC) in Ukraine",
+        "short_title":         "RECP & Cleaner Production Centre – Ukraine",
         "year":                2021,
         "country":             "Ukraine",
         "region":              "Europe and Central Asia",
@@ -468,6 +471,7 @@ PILOT_METADATA: dict[str, dict] = {
         "project_id":          "GFURU-120323",
         "gef_id":              "4890",
         "title":               "Independent Terminal Evaluation: Towards a Green Economy in Uruguay: Stimulating Sustainable Practices and Low-Emission Technologies in Prioritized Sectors",
+        "short_title":         "Green Economy – Uruguay",
         "year":                2021,
         "country":             "Uruguay",
         "region":              "Latin America",
@@ -788,6 +792,24 @@ if st.session_state.get("_deploy_ts") != _deploy_ts:
 
 def auth_headers() -> dict:
     return {"X-Session-Token": st.session_state.session_token or ""}
+
+def display_title(rep: dict) -> str:
+    """Return a clean, concise display title for dropdowns and labels.
+    Uses short_title if available, otherwise strips the common ITE preamble."""
+    if rep.get("short_title"):
+        return rep["short_title"]
+    title = rep.get("title", "") or ""
+    # Strip common preamble variations
+    for prefix in [
+        "Independent Terminal Evaluation: The Project ",
+        "Independent Terminal Evaluation: ",
+        "Terminal Evaluation: ",
+    ]:
+        if title.startswith(prefix):
+            title = title[len(prefix):].strip().strip('"')
+            break
+    return title or rep.get("report_id", "Unknown")
+
 
 def api(method: str, path: str, **kw) -> httpx.Response:
     h = kw.pop("headers", {})
@@ -2084,7 +2106,7 @@ def show_synthesis_tab(filters: dict):
             for rep in visible:
                 rid = rep["report_id"]
                 checked = rid in selected_ids
-                label = f"{rep.get('year','')} — {rep.get('title','')[:55]}"
+                label = f"{rep.get('year','')} — {display_title(rep)}"
                 new = st.checkbox(label, value=checked, key=f"synth_cb_{rid}")
                 if new and rid not in selected_ids:
                     selected_ids.append(rid)
@@ -2101,7 +2123,7 @@ def show_synthesis_tab(filters: dict):
                 # Selected report pills
                 sel_reps = [r for r in all_reps if r["report_id"] in selected_ids]
                 pills_html = " ".join(
-                    f'<span class="tag tag-blue">{r.get("title","")[:40]}</span>'
+                    f'<span class="tag tag-blue">{display_title(r)}</span>'
                     for r in sel_reps[:8]
                 )
                 if len(sel_reps) > 8:
@@ -2658,7 +2680,7 @@ def show_visualize_tab():
 
     infog_col1, infog_col2 = st.columns([3, 1])
     with infog_col1:
-        report_options = {r["report_id"]: f"{r.get('year','')} — {r.get('title','')[:70]}"
+        report_options = {r["report_id"]: f"{r.get('year','')} — {display_title(r)}"
                          for r in reports}
         infog_rid = st.selectbox(
             "Select report",
@@ -3894,7 +3916,7 @@ def show_dac_tab():
             pilot = PILOT_METADATA.get(rid, {})
             dac_r = pilot.get("dac_ratings", {c: 3 for c in DAC_CRITERIA})
             scores = [dac_r.get(c, 3) for c in DAC_CRITERIA]
-            rep_title = pilot.get("title", rid)[:40]
+            rep_title = display_title(pilot) if pilot else rid
             country   = pilot.get("country", "")
             color     = TRACE_COLORS[i % len(TRACE_COLORS)]
 
