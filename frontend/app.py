@@ -3805,9 +3805,8 @@ def show_dac_tab():
                 theta=DAC_LABELS + [DAC_LABELS[0]],
                 name=f"{country} ({pilot.get('year','')})",
                 fill="toself",
-                fillcolor=color.replace("#", "rgba(") + ",0.15)" if "#" in color else color,
                 line=dict(color=color, width=2.5),
-                opacity=0.9,
+                opacity=0.7,
                 hovertemplate=(
                     "<b>%{theta}</b><br>"
                     "Rating: %{r}/6<br>"
