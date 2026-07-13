@@ -2052,7 +2052,7 @@ def show_synthesis_tab(filters: dict):
                 if r.get("report_id") in PILOT_METADATA]
 
     # ── Sub-tabs: Ask Claude | History ───────────────────────────────────────
-    sub_ask, sub_hist = st.tabs(["💬 Ask Claude", "📋 History"])
+    sub_ask, sub_hist = st.tabs(["Ask AI", "History"])
 
     # ════════════════════════════════════════════════════════════════════════
     # SUB-TAB 1 — Ask Claude
@@ -2134,7 +2134,7 @@ def show_synthesis_tab(filters: dict):
                     key="synth_query",
                 )
 
-                send = st.button("Ask Claude", type="primary", use_container_width=False)
+                send = st.button("Ask AI", type="primary", use_container_width=False)
 
                 if send and query.strip():
                     with st.spinner("Claude is synthesising across selected reports…"):
@@ -2234,7 +2234,7 @@ def show_synthesis_tab(filters: dict):
         history = _load_synth_history()
 
         if not history:
-            st.info("No questions saved yet. Ask a question in the **Ask Claude** tab and it will appear here.")
+            st.info("No questions saved yet. Ask a question in the **Ask AI** tab and it will appear here.")
         else:
             # Search / filter
             hist_search = st.text_input("🔍 Search questions", placeholder="Filter by keyword…", key="hist_search")
@@ -3981,7 +3981,7 @@ def show_dac_tab():
 
         # ── AI Summary ────────────────────────────────────────────────────
         st.markdown("#### AI Summary by Criterion")
-        if st.button("✨ Generate AI Summary across criteria", type="primary",
+        if st.button("Generate AI Summary across criteria", type="primary",
                      use_container_width=True, key="dac_ai_btn"):
             with st.spinner("Claude is analysing DAC evidence across selected reports…"):
                 try:
